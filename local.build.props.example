@@ -1,0 +1,5 @@
+<Project>
+  <PropertyGroup>
+    <GameDir>C:\Path\To\MyVoiceZoo</GameDir>
+  </PropertyGroup>
+</Project>

@@ -1,0 +1,16 @@
+bin/
+obj/
+local.build.props
+.vs/
+work/
+artifacts/
+*.log
+*.pdb
+*.user
+
+# Game-owned files and generated interop output stay local.
+MelonLoader/
+MyVoiceZoo_Data/
+GameAssembly.dll
+steam_api64.dll
+
