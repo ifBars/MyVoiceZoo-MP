@@ -95,13 +95,9 @@ internal sealed class CoopPanel : IDisposable
         var obj = NewUiObject(label, _root!.transform);
         Position(obj.GetComponent<RectTransform>(), new Vector2(x, -42f), new Vector2(82f, 29f));
         var image = obj.AddComponent<Image>();
-        var nativeImage = template.GetComponent<Image>();
-        if (nativeImage != null)
-        {
-            image.sprite = nativeImage.sprite;
-            image.type = nativeImage.type;
-            image.color = nativeImage.color;
-        }
+        image.sprite = null;
+        image.type = Image.Type.Simple;
+        image.color = new Color(0.34f, 0.10f, 0.14f, 0.96f);
         var button = obj.AddComponent<Button>();
         button.targetGraphic = image;
         button.colors = template.colors;

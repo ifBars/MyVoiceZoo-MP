@@ -216,12 +216,20 @@ internal sealed class RemotePlayers : IDisposable
             if (reportStages)
             {
                 MelonLogger.Msg($"COOP_VISUAL_SOURCE renderer={VisualPath(local.spriteRenderer.transform, local.transform)} animator={VisualPath(local.animator.transform, local.transform)} library={VisualPath(local._spriteLibrary.transform, local.transform)} renderers={renderers.Count} resolvers={resolvers.Count}");
+                _reportedVisuals = true;
             }
 
             var animator = animatorObject.gameObject.AddComponent<Animator>();
             animator.runtimeAnimatorController = local.animator.runtimeAnimatorController;
             animator.fireEvents = false;
             if (reportStages) MelonLogger.Msg("COOP_VISUAL_ANIMATOR_READY");
+
+            // TextMeshPro initializes its renderer in Awake. Activate the visual
+            // hierarchy before adding its world-space nameplate.
+            root.SetActive(true);
+            foreach (var (source, clone) in resolvers)
+                clone.SetCategoryAndLabel(source.GetCategory(), source.GetLabel());
+            library.RefreshSpriteResolvers();
 
             var nameObject = new GameObject("Peer name");
             nameObject.transform.SetParent(root.transform, false);
@@ -230,22 +238,21 @@ internal sealed class RemotePlayers : IDisposable
             var name = nameObject.AddComponent<TextMeshPro>();
             var nativeText = GameManager.Instance?._uiManager?
                 .GetComponentInChildren<TextMeshProUGUI>(true);
-            if (nativeText != null) name.font = nativeText.font;
-            name.richText = false;
+            if (nativeText != null && nativeText.font != null)
+            {
+                try { name.font = nativeText.font; }
+                catch (Exception e) { if (reportStages) MelonLogger.Warning($"COOP_NAME_FONT_FALLBACK {e.Message}"); }
+            }
             name.fontSize = 3f;
+            name.richText = false;
             name.alignment = TextAlignmentOptions.Center;
             name.color = Color.white;
             name.renderer.sortingLayerID = renderer.sortingLayerID;
             name.renderer.sortingOrder = renderer.sortingOrder + 1;
             if (reportStages) MelonLogger.Msg("COOP_VISUAL_NAME_READY");
-            root.SetActive(true);
-            foreach (var (source, clone) in resolvers)
-                clone.SetCategoryAndLabel(source.GetCategory(), source.GetLabel());
-            library.RefreshSpriteResolvers();
             if (reportStages)
             {
                 MelonLogger.Msg("COOP_VISUAL_READY");
-                _reportedVisuals = true;
             }
 
             return new Replica
@@ -317,4 +324,5 @@ internal sealed class RemotePlayers : IDisposable
         return asset;
     }
 }
+
 
