@@ -48,3 +48,11 @@ Generated IL2CPP wrappers are not sufficient evidence of safe calls. SteamNetwor
 The scripted adoption flow can log native `CollectionView.Hide` null-reference exceptions because it invokes the editor without first browsing the collection. Shared-state and recording assertions still pass; this is not being reported as an exception-free manual playtest. Repeat two-account movement feel and recording with the intended microphone remains useful after updating both players.
 
 - Final native settings inspection used the retained populated host clone from `run-20260923-062450-62dfa8a5`; `evidence/settings-Latest.log` records Host/Leave button callback success and hide success. The final `host-data/settings.png` was visually inspected: native audio/language/resolution/quit controls remain within the frame, the co-op column fits inside it, and disabled actions are visibly muted. The settings-only launch needs explicit window width/height; an earlier hidden launch without them produced a black capture and was rejected as visual evidence.
+
+## 0.2.2 settings layout
+
+Widened the native settings popup from 1400 to 1560 UI units and retained Quit Game at the popup's horizontal center. Release build passed. The isolated settings test passed Host/Leave callbacks and hide checks; its fresh screenshot was inspected at 1920x1080 and confirms left-side text stays inside the painted frame and Quit Game is centered. No gameplay or transport changes.
+
+The startup hint waits for the splash, game loading screen, and microphone guide to finish, then uses a four-second unscaled timer (brief fade-in, full visibility, final one-second fade-out). Earlier captures hidden behind the microphone guide were rejected; the final readiness condition includes that native guide explicitly.
+
+Final startup capture was visually inspected at full opacity and at alpha 0.50, over the loaded zoo. Logs show display at 06:43:09.789 and removal at 06:43:13.766. The settings Host/Leave and hide checks also passed on this build.

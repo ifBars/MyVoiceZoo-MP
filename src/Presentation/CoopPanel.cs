@@ -41,7 +41,7 @@ internal sealed class CoopPanel : IDisposable
         if (settings == null || GameManager.Instance?._loadCompleted != true) return;
         if (_settingsProbePhase == 0)
         {
-            _settingsProbeAt = Time.realtimeSinceStartup + 8f;
+            _settingsProbeAt = Time.realtimeSinceStartup + 25f;
             _settingsProbePhase = 1;
         }
         if (_settingsProbePhase == 1 && Time.realtimeSinceStartup >= _settingsProbeAt)
@@ -163,16 +163,16 @@ internal sealed class CoopPanel : IDisposable
         _settings = settings;
         _popup = popupTransform.GetComponent<RectTransform>();
         _popupOriginalSize = _popup.sizeDelta;
-        _popup.sizeDelta = new Vector2(_popupOriginalSize.x + 464f, _popupOriginalSize.y);
+        _popup.sizeDelta = new Vector2(_popupOriginalSize.x + 624f, _popupOriginalSize.y);
         _frame = popupTransform.Find("Frame")?.GetComponent<RectTransform>();
         if (_frame != null)
         {
             _frameOriginalSize = _frame.sizeDelta;
             // Stretch-anchored frames follow the popup automatically.
             if (_frame.anchorMin.x == _frame.anchorMax.x)
-                _frame.sizeDelta = new Vector2(_frameOriginalSize.x + 464f, _frameOriginalSize.y);
+                _frame.sizeDelta = new Vector2(_frameOriginalSize.x + 624f, _frameOriginalSize.y);
         }
-        foreach (var name in new[] { "Audio", "Language", "Resolution", "MicGuideText", "QuitGameButton" })
+        foreach (var name in new[] { "Audio", "Language", "Resolution", "MicGuideText" })
         {
             var rect = popupTransform.Find(name)?.GetComponent<RectTransform>();
             if (rect == null) continue;

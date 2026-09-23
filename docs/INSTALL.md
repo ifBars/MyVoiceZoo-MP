@@ -1,4 +1,4 @@
-# MVZ-MP 0.2.1
+# MVZ-MP 0.2.2
 
 Steam co-op for MyVoiceZoo. Up to four players share the host's animals, recordings, placement, gold, areas, camps, and purchased costumes.
 
@@ -22,4 +22,6 @@ This package contains no game assemblies, generated wrappers, saves, recordings,
 
 Validated with two isolated GSE game processes, including rendered player/nameplate checks, shared purchases/recordings, reconnect, host departure, and guest save preservation. The user has also reported a successful two-account playtest of 0.2.0, with movement/depth issues addressed in this update. The new build still needs a repeat real-account playtest; four-player and long-session testing remain unverified.
 
-Version 0.2.1 uses protocol 4. Both players must update together. Movement uses a separate latest-pose channel and buffered playback; native sprite pivot sorting is preserved. Microphone diagnostics distinguish capture silence from transfer failure.
+Version 0.2.2 uses protocol 4. Both players must update together. Movement uses a separate latest-pose channel and buffered playback; native sprite pivot sorting is preserved. Microphone diagnostics distinguish capture silence from transfer failure.
+
+On startup, a four-second fading hint points you to Settings once the splash, loading screen, and microphone guide have closed. The settings frame is wider, and Quit Game is centered below both columns.

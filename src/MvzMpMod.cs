@@ -3,7 +3,7 @@ using MvzMp.Game;
 using MvzMp.Presentation;
 using UnityEngine;
 
-[assembly: MelonInfo(typeof(MvzMp.MvzMpMod), "MVZ-MP", "0.2.1", "Bars")]
+[assembly: MelonInfo(typeof(MvzMp.MvzMpMod), "MVZ-MP", "0.2.2", "Bars")]
 [assembly: MelonGame("DefaultCompany", "MyVoiceZoo")]
 
 namespace MvzMp;
@@ -13,6 +13,7 @@ public sealed class MvzMpMod : MelonMod
     private SteamLobby? _lobby;
     private CoopRuntime? _runtime;
     private CoopPanel? _panel;
+    private readonly StartupHint _startupHint = new();
     private DateTime _lastError;
     private MvzMp.Diagnostics.SmokeScenario? _smoke;
 
@@ -38,6 +39,7 @@ public sealed class MvzMpMod : MelonMod
             _runtime!.Tick();
             _smoke!.Tick();
             MvzMp.Diagnostics.MovementProbe.Tick(_lobby);
+            _startupHint.Tick();
             _panel!.Tick();
             if (!_lobby.IsReady) return;
             if (Input.GetKeyDown(KeyCode.F6)) _lobby.Host();
@@ -52,7 +54,7 @@ public sealed class MvzMpMod : MelonMod
 
     public override void OnDeinitializeMelon()
     {
-        _runtime?.Dispose(); _panel?.Dispose(); _lobby?.Dispose(); NativeHooks.Runtime = null;
+        _runtime?.Dispose(); _startupHint.Dispose(); _panel?.Dispose(); _lobby?.Dispose(); NativeHooks.Runtime = null;
     }
 }
 
