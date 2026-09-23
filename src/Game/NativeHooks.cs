@@ -6,6 +6,13 @@ namespace MvzMp.Game;
 internal static class NativeHooks
 {
     internal static CoopRuntime? Runtime;
+    internal static AnimalPos? PickedPosition;
+    internal static AnimalPickController? Picker;
+    [HarmonyPatch(typeof(AnimalPickController), nameof(AnimalPickController.OnPickAnimalSpawnPos))]
+    private static class Pick
+    {
+        private static void Postfix(AnimalPickController __instance) { Picker = __instance; PickedPosition = __instance._pickedAnimalPos; }
+    }
 
     [HarmonyPatch(typeof(CollectionDetailPanel), nameof(CollectionDetailPanel.OnClickAdoptButton))]
     private static class Adopt
@@ -31,8 +38,9 @@ internal static class NativeHooks
     private static class Drop
     {
         private static void Prefix(AnimalPickController __instance, out AnimalPos? __state) => __state = __instance._pickedAnimalPos;
-        private static void Postfix(AnimalPos? __state) => Runtime?.Moved(__state);
+        private static void Postfix(AnimalPos? __state) { PickedPosition = null; Runtime?.Moved(__state); }
     }
     [HarmonyPatch(typeof(AnimalPrefab), nameof(AnimalPrefab.AddIncome))]
     private static class Income { private static bool Prefix() => !(Runtime?.IsGuest ?? false); }
 }
+

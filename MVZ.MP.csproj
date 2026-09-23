@@ -22,6 +22,7 @@
     <Reference Include="Assembly-CSharp"><HintPath>$(GameInteropDir)\Assembly-CSharp.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="Il2Cppmscorlib"><HintPath>$(GameInteropDir)\Il2Cppmscorlib.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="Il2Cppcom.rlabrecque.steamworks.net"><HintPath>$(GameInteropDir)\Il2Cppcom.rlabrecque.steamworks.net.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.ScreenCaptureModule"><HintPath>$(GameInteropDir)\UnityEngine.ScreenCaptureModule.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="UnityEngine.CoreModule"><HintPath>$(GameInteropDir)\UnityEngine.CoreModule.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="UnityEngine.InputLegacyModule"><HintPath>$(GameInteropDir)\UnityEngine.InputLegacyModule.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="UnityEngine.AudioModule"><HintPath>$(GameInteropDir)\UnityEngine.AudioModule.dll</HintPath><Private>false</Private></Reference>
@@ -33,4 +34,5 @@
     <Reference Include="Unity.2D.Animation.Runtime"><HintPath>$(GameInteropDir)\Unity.2D.Animation.Runtime.dll</HintPath><Private>false</Private></Reference>
   </ItemGroup>
 </Project>
+
 

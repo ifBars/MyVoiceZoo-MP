@@ -16,12 +16,18 @@ internal sealed class SmokeScenario
     private DateTime _next, _started = DateTime.UtcNow;
     private int _step, _animal = -1, _camp = -1;
     private bool _failed;
+    private ulong _originalLobby;
+    private string? _soloFileHash;
     private const string Name = "Coop test";
     public SmokeScenario(CoopRuntime runtime, SteamLobby lobby)
     {
         _runtime = runtime; _lobby = lobby;
         _enabled = Environment.GetCommandLineArgs().Contains("--mvzmp-smoke=shared-zoo") && Environment.GetCommandLineArgs().Any(a => a.StartsWith("--mvzmp-data-dir="));
         _host = Environment.GetCommandLineArgs().Contains("--mvzmp-host");
+    }
+    private static void CaptureScreenshot()
+    {
+        if (!Environment.GetCommandLineArgs().Contains("-nographics")) ScreenCapture.CaptureScreenshot(Path.Combine(Path.GetDirectoryName(SaveLoadSystem._path)!, "coop.png"));
     }
     public void Tick()
     {
@@ -44,14 +50,26 @@ internal sealed class SmokeScenario
                 var adopted = state.Animals.FirstOrDefault(a => a.Name == Name && a.Collected && a.Voice.Length == 64);
                 if (adopted != null && Math.Abs(adopted.X - 1.25f) < .01f && state.WindIsland && state.Camps.Length > 0)
                 {
+                    CaptureScreenshot();
                     MelonLogger.Msg($"PASS|shared-zoo|host animal={adopted.Id} voice={adopted.Voice} position={adopted.X} camp={string.Join(',', state.Camps)} save={SaveLoadSystem._path}");
                     _step = 99;
                 }
                 return;
             }
-            if (_step == 0)
+            if (_step == 0 && !_lobby.IsInLobby)
+            {
+                var connect = Environment.GetCommandLineArgs().FirstOrDefault(a => a.StartsWith("--mvzmp-smoke-lobby="));
+                if (connect == null) return;
+                Wallet.Instance.Init(12345); _runtime.Zoo.Save();
+                _soloFileHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(SaveLoadSystem._path)));
+                _originalLobby = ulong.Parse(connect.Split('=')[1]);
+                Il2CppSteamworks.SteamMatchmaking.JoinLobby(new Il2CppSteamworks.CSteamID(_originalLobby)); _step = -1; return;
+            }
+            if (_step is 0 or -1)
             {
                 if (!_runtime.Synchronized) return;
+                _originalLobby = _lobby.LobbyId;
+                GameManager.Instance._player.transform.position += new Vector3(2, 0, 0);
                 _animal = _runtime.Zoo.Capture().Animals.First(a => !a.Collected).Id;
                 _runtime.BeginEdit(_animal, true); _step = 1;
                 MelonLogger.Msg($"SMOKE client adopt requested {_animal}");
@@ -60,6 +78,7 @@ internal sealed class SmokeScenario
             {
                 if (_runtime.EditingAnimal != _animal) return;
                 var view = GameManager.Instance._uiManager._adoptView;
+                if (view._animal == null) return; // The native adoption reveal opens the editor after its animation.
                 view.OnNameInputValueChanged(Name);
                 var clip = AudioClip.Create("co-op smoke recording", 48000, 1, 48000, false);
                 var samples = new Il2CppStructArray<float>(48000);
@@ -90,14 +109,32 @@ internal sealed class SmokeScenario
                 var animal = state.Animals.First(a => a.Id == _animal);
                 if (!state.WindIsland || !state.Camps.Contains(_camp) || animal.Name != Name || animal.Voice.Length != 64 || Math.Abs(animal.X - 1.25f) > .01f) return;
                 MelonLogger.Msg($"SMOKE client converged animal={_animal} voice={animal.Voice}");
+                if (_soloFileHash != null && _soloFileHash != Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(SaveLoadSystem._path)))) throw new Exception("Guest save changed during co-op.");
+                CaptureScreenshot(); _step = 51;
+            }
+            else if (_step == 51)
+            {
                 _lobby.Leave(); _step = 6;
             }
             else if (_step == 6)
             {
-                if (_runtime.IsGuest || _runtime.Zoo.Animal(_animal)!.IsCollected) throw new Exception("Guest's original zoo was not restored after leaving.");
-                MelonLogger.Msg("PASS|shared-zoo|client state converged and solo zoo restored"); _step = 99;
+                if (_runtime.IsGuest || _runtime.Zoo.Animal(_animal)!.IsCollected || (_soloFileHash != null && Wallet.Instance.CurrentGold != 12345)) throw new Exception("Guest's original zoo was not restored after leaving.");
+                Il2CppSteamworks.SteamMatchmaking.JoinLobby(new Il2CppSteamworks.CSteamID(_originalLobby)); _step = 7;
+            }
+            else if (_step == 7)
+            {
+                if (!_runtime.Synchronized || _runtime.Zoo.Animal(_animal)!.Name != Name) return;
+                _lobby.Leave(); _step = 8;
+            }
+            else if (_step == 8)
+            {
+                if (_runtime.IsGuest || _runtime.Zoo.Animal(_animal)!.IsCollected) throw new Exception("Solo restore failed after reconnect.");
+                MelonLogger.Msg("PASS|shared-zoo|client state converged, reconnected, and solo zoo restored twice"); _step = 99;
             }
         }
         catch (Exception e) { _failed = true; MelonLogger.Error($"FAIL|shared-zoo|{e}"); }
     }
 }
+
+
+

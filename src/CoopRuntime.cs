@@ -108,7 +108,15 @@ internal sealed class CoopRuntime : IDisposable
         _restoring = true;
         try
         {
-            if (_editing >= 0) GameManager.Instance._uiManager._adoptView.Hide();
+            using var scope = new GameMutationScope();
+            if (NativeHooks.PickedPosition != null) NativeHooks.Picker?.ReturnToStartAndDrop();
+            if (_editing >= 0 && _guestProtected)
+            {
+                var animal = Zoo.Animal(_editing);
+                if (animal != null) AnimalManager.Instance.Notify_OnAdoptEditProcessEnd(animal);
+                GameManager.Instance._uiManager._adoptView.Hide();
+                GameManager.Instance._uiManager._unlockView.Hide();
+            }
             _editing = -1; _editLease = "";
             if (_solo != null) { Zoo.Apply(_solo, restoreCostume: true); _solo = null; MelonLogger.Msg("COOP SOLO_RESTORED"); }
             _guestProtected = false;
@@ -328,4 +336,6 @@ internal sealed class CoopRuntime : IDisposable
         _lobby.MessageReceived -= Receive; _lobby.SessionChanged -= SessionChanged; _lobby.PeerLeft -= PeerLeft;
     }
 }
+
+
 

@@ -245,6 +245,7 @@ internal sealed class RemotePlayers : IDisposable
         var nativeText = GameManager.Instance?._uiManager?
             .GetComponentInChildren<TextMeshProUGUI>(true);
         if (nativeText != null) name.font = nativeText.font;
+        name.richText = false;
         name.fontSize = 3f;
         name.alignment = TextAlignmentOptions.Center;
         name.color = Color.white;
@@ -315,3 +316,4 @@ internal sealed class RemotePlayers : IDisposable
         return asset;
     }
 }
+

@@ -8,6 +8,8 @@ param(
     [string]$Scenario = '',
     [int]$TimeoutSeconds = 120,
     [switch]$SkipBuild,
+    [switch]$Rendered,
+    [switch]$LobbyChat,
     [switch]$PlanOnly
 )
 
@@ -38,6 +40,9 @@ function Read-Log([string]$path) {
 function Wait-Log([string]$path, [string]$pattern, [string]$phase, [System.Diagnostics.Process[]]$processes) {
     $end = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
     while ([DateTime]::UtcNow -lt $end) {
+        foreach ($other in @($hostLog, $clientLog)) {
+            if ($other -and (Read-Log $other) -match 'FAIL\|[^\r\n]+') { throw "FAIL|$phase|$($Matches[0])" }
+        }
         $value = Read-Log $path
         if ($value -match 'FAIL\|[^\r\n]+') { throw "FAIL|$phase|$($Matches[0])" }
         $match = [regex]::Match($value, $pattern)
@@ -120,6 +125,8 @@ try {
     Copy-Install $client 'MVZMP-client' $ClientSteamId
     $hostArgs = @('--mvzmp-host', '-batchmode', '-nographics')
     $clientArgs = @('-batchmode', '-nographics')
+    if ($Rendered) { $hostArgs = @('--mvzmp-host', '-screen-fullscreen', '0', '-screen-width', '1280', '-screen-height', '720'); $clientArgs = @('-screen-fullscreen', '0', '-screen-width', '1280', '-screen-height', '720') }
+    if ($LobbyChat) { $hostArgs += '--mvzmp-lobby-chat'; $clientArgs += '--mvzmp-lobby-chat' }
     if ($Scenario) {
         $hostArgs += "--mvzmp-smoke=$Scenario"
         $clientArgs += "--mvzmp-smoke=$Scenario"
@@ -139,7 +146,8 @@ try {
     $created = Wait-Log $hostLog 'Created lobby (\d+)' 'host-created' @($hostProcess)
     $lobbyId = $created.Groups[1].Value
     Wait-Log $hostLog "Joined lobby $lobbyId; owner=$HostSteamId; members=1; role=host" 'host-entered' @($hostProcess) | Out-Null
-    $clientArgs += @('+connect_lobby', $lobbyId)
+    if ($Scenario -eq 'shared-zoo') { $clientArgs += "--mvzmp-smoke-lobby=$lobbyId" }
+    else { $clientArgs += @('+connect_lobby', $lobbyId) }
     $clientProcess = Start-Process -FilePath (Join-Path $client 'MyVoiceZoo.exe') -WorkingDirectory $client -ArgumentList $clientArgs -WindowStyle Hidden -PassThru
     $processes.Add($clientProcess)
     Wait-Log $clientLog 'Loaded\. F6 host, F7 invite, F8 leave\.' 'client-mod-loaded' @($hostProcess, $clientProcess) | Out-Null
@@ -148,6 +156,7 @@ try {
     Wait-Log $hostLog "COOP PEER_READY $ClientSteamId" 'host-members' @($hostProcess, $clientProcess) | Out-Null
     Wait-Log $hostLog "COOP PEER_READY $ClientSteamId" 'host-handshake' @($hostProcess, $clientProcess) | Out-Null
     Wait-Log $clientLog 'COOP SYNC_READY revision=' 'client-handshake' @($hostProcess, $clientProcess) | Out-Null
+
     if ($Scenario) {
         Wait-Log $hostLog "PASS\|$([regex]::Escape($Scenario))\|" 'host-scenario' @($hostProcess, $clientProcess) | Out-Null
         Wait-Log $clientLog "PASS\|$([regex]::Escape($Scenario))\|" 'client-scenario' @($hostProcess, $clientProcess) | Out-Null
@@ -181,6 +190,11 @@ try {
     } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $evidence 'result.json')
     Write-Output "Evidence retained: $evidence"
 }
+
+
+
+
+
 
 
 

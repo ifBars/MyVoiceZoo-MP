@@ -74,7 +74,7 @@ internal sealed class ZooAdapter
                     if (animal.Voice != clip) animal.SetVoice(clip, false);
                 }
             }
-            if (controller._animalPosDict.TryGetValue(entry.Id, out var pos) && pos != null && entry.Id != editingAnimal)
+            if (controller._animalPosDict.TryGetValue(entry.Id, out var pos) && pos != null && entry.Id != editingAnimal && pos != NativeHooks.PickedPosition)
             {
                 pos.transform.position = new Vector3(entry.X, entry.Y, entry.Z);
                 pos.SetCurrentSortingOrder(entry.SortingOrder);
@@ -156,4 +156,5 @@ internal readonly struct GameMutationScope : IDisposable
     public GameMutationScope() => _depth++;
     public void Dispose() => _depth--;
 }
+
 
