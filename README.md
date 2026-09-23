@@ -1,20 +1,40 @@
 # MVZ-MP
 
-Steamworks-based co-op mod for the Unity IL2CPP game MyVoiceZoo. Current milestone: friends-only lobby, Steam invite overlay, invite join, and peer handshake through the game's bundled Steamworks.NET. Shared zoo synchronization is the next milestone.
+A Steam co-op mod for MyVoiceZoo. Up to four friends share the host's zoo using the game's normal adoption, recording, building, and costume interfaces.
 
-## Local setup
+## Install and play
 
-1. Install MelonLoader x64 into your MyVoiceZoo installation and launch the game once to generate `MelonLoader/Il2CppAssemblies`.
-2. Copy `local.build.props.example` to `local.build.props` and set `GameDir` to your local game installation.
-3. Run `dotnet build MVZ.MP.csproj -c Release`.
-4. Copy `bin/Release/net6.0/MVZ.MP.dll` into the game's `Mods` folder.
+1. Install **MelonLoader 0.7.3 x64** into MyVoiceZoo and run the game once.
+2. Put `MVZ.MP.dll` in the game's `Mods` folder. Every player needs the same game and mod build.
+3. Load your zoo and choose **Host** in the co-op panel, then **Invite** to open Steam's invite dialog.
+4. Friends accept the Steam invite. Their zoo is temporarily replaced by the host's shared zoo for the session.
+5. Choose **Leave** to return to your own zoo. The host retains shared progress.
 
-In game, press **F6** to create a friends-only Steam lobby, **F7** to open the Steam invite dialog, or **F8** to leave. Accepting a Steam lobby invite joins the session. The loader log reports the lobby ID, member count, and protocol handshake. All players need the same game build and mod version.
+Keyboard shortcuts: **F6** host, **F7** invite, **F8** leave. Steam must be running with the game available to each player. The lobby is friends-only.
 
-For a menu-only host smoke test, add `--mvzmp-host` to Steam launch options. This creates the lobby once Steam initializes.
+## Shared play
 
-The lobby and handshake have been tested with two isolated GSE identities. The Steam overlay invite flow still needs a two-account live Steam test.
+- Shared animals, names, recordings, placement, gold, areas, camps, and purchased costumes.
+- Native adoption and edit screens. The host validates costs and reserves an animal while a player edits it.
+- Each player keeps independent movement and equipped appearance; remote players have nameplates.
+- Recordings transfer when shared animal state requires them. There is no live microphone chat.
+- Guests do not save the shared zoo into their solo save. Leaving restores their pre-join zoo in memory.
+- If the host leaves, the session ends. Host migration is not supported.
 
-This milestone does **not** synchronize zoo progress, animal voices, player avatars, or saves yet. Keep ordinary single-player saves separate until host-owned state sync is implemented and tested. Even a menu-only run can create a save in the shared Windows `LocalLow` path, so back it up before running multiple local game processes.
+SteamNetworkingMessages carries state and recording data. A bounded lobby-chat transport is retained for diagnostic compatibility. Mod protocol and game fingerprints must match before joining.
 
-Game-owned assemblies and generated wrappers are referenced locally and are never bundled in this repository.
+## Build
+
+Copy `local.build.props.example` to `local.build.props` and set `GameDir` to your installed game. After MelonLoader generates its IL2CPP wrappers:
+
+```powershell
+dotnet build MVZ.MP.csproj -c Release
+```
+
+Only `bin/Release/net6.0/MVZ.MP.dll` is installed. Game assemblies, generated wrappers, recordings, saves, and GSE are never included in the mod package.
+
+## Development validation
+
+See [the test runner](docs/testing-runner.md) for isolated two-process GSE tests and packaging, and [architecture](docs/architecture.md) for authority and persistence rules. Test-only `--mvzmp-data-dir=<absolute>` redirects game saves and recordings; `--mvzmp-smoke=shared-zoo` runs the disposable-save gameplay scenario. Never use the smoke option on a personal save.
+
+A local GSE test does not verify Steam overlay invite acceptance between two real Steam accounts. Current validation results are recorded in [runtime validation](docs/runtime-validation.md).

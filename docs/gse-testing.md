@@ -1,4 +1,6 @@
-# Local GSE lobby smoke test
+# Local GSE setup notes
+
+Use the [repeatable runner](testing-runner.md) for current tests. These manual steps document the initial lobby-only probe; current shared-zoo evidence is in [runtime validation](runtime-validation.md).
 
 Use this only for local testing with a user-owned MyVoiceZoo installation and a known GSE x64 `steam_api64.dll`. GSE is not part of this repository or release package. The two-process lobby test passed on 2026-09-23 using a GSE Client API build with file version `08.33.09.23` and SHA-256 `EF32F9BB1FEF9E9B58F3EA06F88B2EA1E206C861A4D0431D287E537C59A1A391`.
 
@@ -17,6 +19,6 @@ Use this only for local testing with a user-owned MyVoiceZoo installation and a 
    Use a different name and `account_steamid=76561198000040002` for the client.
 5. Start the host with `--mvzmp-host -batchmode -nographics`. Read its current MelonLoader log for `Created lobby <id>` and `Joined lobby <id> ... role=host`.
 6. Start the client with `+connect_lobby <id> -batchmode -nographics`. Require distinct Steam IDs, the same lobby ID, `members=2`, and a handshake message from the opposite peer in **both** logs.
-7. Stop only those two processes. Preserve the short result summary, restore the backed-up `LocalLow` directory, and remove disposable installs and test settings.
+7. Stop only those two processes. Preserve the short result summary, restore the backed-up `LocalLow` directory, and retain disposable installs until evidence is reviewed.
 
 This proves Steamworks.NET lobby and chat transport through GSE. It does not prove real Steam overlay invites or zoo state synchronization.

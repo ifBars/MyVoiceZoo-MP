@@ -27,6 +27,17 @@ internal sealed class SmokeScenario
         _verifySave = Environment.GetCommandLineArgs().Contains("--mvzmp-smoke=verify-save") && MvzMp.Game.SaveIsolation.IsIsolated;
         _enabled |= _verifySave;
         _host = Environment.GetCommandLineArgs().Contains("--mvzmp-host");
+        if (_enabled && _host) lobby.MessageReceived += (peer, bytes) =>
+        {
+            try
+            {
+                var message = System.Text.Json.JsonSerializer.Deserialize<WireMessage>(bytes);
+                if (_step == 99 && message?.Kind == "smoke-end")
+                {
+                    lobby.Leave(); MelonLogger.Msg("PASS|host-departure|host left after guest rejoined");
+                }
+            } catch { /* The normal receiver owns invalid-packet diagnostics. */ }
+        };
     }
     private static void CaptureScreenshot()
     {
@@ -163,24 +174,15 @@ internal sealed class SmokeScenario
             else if (_step == 7)
             {
                 if (!_runtime.Synchronized || _runtime.Zoo.Animal(_animal)!.Name != Name) return;
-                _lobby.Leave(); _step = 8;
+                _lobby.Send(_lobby.HostSteamId, System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(new WireMessage { Kind = "smoke-end" })); _step = 8;
             }
             else if (_step == 8)
             {
+                if (_lobby.IsInLobby) return;
                 if (_runtime.IsGuest || _runtime.Zoo.Animal(_animal)!.IsCollected) throw new Exception("Solo restore failed after reconnect.");
-                MelonLogger.Msg("PASS|shared-zoo|client state converged, reconnected, and solo zoo restored twice"); _step = 99;
+                MelonLogger.Msg("PASS|shared-zoo|client state converged, reconnected, and solo zoo restored after host departure"); _step = 99;
             }
         }
         catch (Exception e) { _failed = true; MelonLogger.Error($"FAIL|shared-zoo|{e}"); }
     }
 }
-
-
-
-
-
-
-
-
-
-

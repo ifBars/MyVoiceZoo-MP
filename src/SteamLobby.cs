@@ -201,6 +201,12 @@ internal sealed class SteamLobby : IDisposable
         MelonLogger.Msg("Creating friends-only Steam lobby.");
     }
 
+    internal string PeerName(ulong peer)
+    {
+        var name = SteamFriends.GetFriendPersonaName(new CSteamID(peer));
+        if (string.IsNullOrWhiteSpace(name) || name == "[unknown]") name = SteamMatchmaking.GetLobbyMemberData(_lobbyId, new CSteamID(peer), "mvzmp_name");
+        return string.IsNullOrWhiteSpace(name) ? $"Player {peer % 10000:0000}" : name;
+    }
     public void Invite()
     {
         if (!IsInLobby)
@@ -335,6 +341,7 @@ internal sealed class SteamLobby : IDisposable
             _localEpoch = BitConverter.ToUInt64(RandomNumberGenerator.GetBytes(8));
         } while (_localEpoch == 0);
         SteamMatchmaking.SetLobbyMemberData(_lobbyId, EpochKey, _localEpoch.ToString("X16", CultureInfo.InvariantCulture));
+        SteamMatchmaking.SetLobbyMemberData(_lobbyId, "mvzmp_name", SteamFriends.GetPersonaName());
         RefreshMembers(notify: false);
         SessionChanged?.Invoke();
         AnnounceReadyPeers();
@@ -579,3 +586,4 @@ internal sealed class SteamLobby : IDisposable
 
     private readonly record struct QueuedPacket(ulong Peer, uint Sequence, byte[] Bytes);
 }
+

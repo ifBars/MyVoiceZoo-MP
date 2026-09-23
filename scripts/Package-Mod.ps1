@@ -9,7 +9,7 @@ $ErrorActionPreference = 'Stop'
 $repo = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $project = Join-Path $repo 'MVZ.MP.csproj'
 $dll = Join-Path $repo 'bin\Release\net6.0\MVZ.MP.dll'
-$readme = Join-Path $repo 'README.md'
+$readme = Join-Path $repo 'docs\INSTALL.md'
 
 if (-not $SkipBuild) {
     $buildArgs = @('build', $project, '-c', 'Release')

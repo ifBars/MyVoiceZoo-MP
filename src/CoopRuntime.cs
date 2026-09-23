@@ -144,7 +144,7 @@ internal sealed class CoopRuntime : IDisposable
             if (m.Kind == "pose")
             {
                 if (!Zoo.Ready || !ZooAdapter.ValidPosition(m.X, m.Y, m.Z) || !Enum.IsDefined(typeof(CostumeID), m.CostumeId)) return;
-                _players.Apply(sender, SteamFriends.GetFriendPersonaName(new CSteamID(sender)), new PlayerPose(m.X, m.Y, m.Z, m.FacingRight, m.Moving, m.CostumeId));
+                _players.Apply(sender, _lobby.PeerName(sender), new PlayerPose(m.X, m.Y, m.Z, m.FacingRight, m.Moving, m.CostumeId));
                 return;
             }
             if (_lobby.IsHost)
@@ -338,6 +338,7 @@ internal sealed class CoopRuntime : IDisposable
         _lobby.MessageReceived -= Receive; _lobby.SessionChanged -= SessionChanged; _lobby.PeerLeft -= PeerLeft;
     }
 }
+
 
 
 

@@ -1,32 +1,25 @@
 # Co-op architecture
 
-## Confirmed local seams
+## Native integration
 
-MyVoiceZoo is a Unity 2022.3.62f2 IL2CPP game. MelonLoader 0.7.3 generates interop assemblies from the installed build. The game bundles Steamworks.NET and initializes it through `SteamManager`. `SteamManager.Update` exists and the mod observed `SteamManager.Initialized` in a live process.
+The installed game is Unity 2022.3.62f2 IL2CPP. MelonLoader 0.7.3 generates the local wrappers. The game owns Steam initialization and callback pumping. The mod uses the bundled Steamworks.NET wrapper, a friends-only lobby, and SteamNetworkingMessages.
 
-The generated game types expose `AnimalManager` adoption, edit, name, voice, and collection operations; `Wallet` gold operations; `AnimalPrefabController` spawning and position lookup; `GameManager` save/load; `GameSaveData` for animal, gold, position, area, camp, and costume data; and `WavSaveLoadManager` for recordings. These are method and data seams, not proof that network application of each operation is safe.
+Harmony prefixes intercept the native collection, area, camp, and costume UI actions for guests. Native compiled call paths were inspected because several UI callbacks inline manager operations. The host executes validated native manager operations; for remote adoption it applies the verified cost/collection sequence without opening the host's editor. Guest adoption opens the normal native editor after a host grant. The editor's Hide boundary submits the resulting name and voice. Guest animal income is suppressed; only the host produces shared gold.
 
-## Host-owned zoo
+## Authority and synchronization
 
-The Steam lobby owner is the session host and owns the persistent zoo. Guests send commands with an action ID. The host validates each action against current zoo state, executes it once, and publishes the resulting state with a monotonically increasing revision. Guests apply only newer revisions. Rejoining clients receive a full snapshot before incremental events.
+The Steam lobby owner owns the zoo and its persistence. Commands carry unique request IDs and results are deduplicated. Edits require an animal lease bound to the requesting peer; heartbeat renewal keeps an active editor reserved. A peer leaving releases its leases. A change of lobby owner ends the session.
 
-The host must decide animal adoption cost and gold changes together; blindly replaying a guest-side `AdoptAnimal` call risks bypassing or double charging the game's UI transaction. Identify the vanilla purchase call chain before implementing guest adoption. Similar care is needed for area and costume purchases.
+The host samples zoo state once per second and sends a revisioned full snapshot when it changes. Guests validate animal IDs, counts, positions, names, and gold before applying snapshots. Guests retain their last authoritative state for rollback after rejected speculative edits. Active local editing and dragging are excluded from ordinary snapshot overwrite.
 
-Voice clips should be encoded and sent in bounded chunks over Steam networking messages, with a content hash and maximum size. The host stores the accepted recording and announces its version to guests. No microphone audio should be sent merely because someone joins.
+Snapshots reference recordings by SHA-256 of their format and PCM16 samples. Missing clips are requested one at a time. Audio dimensions, digest, message sizes, queue budgets, and reassembly lifetime are bounded. Player poses are independent of zoo transactions and are rendered by inert visual replicas.
 
-Guest game saves must be suppressed while joined and restored to normal on leave. Before the first state sync, make a disposable copy of a save and verify join, leave, reload, and crash recovery. The host saves through the game's existing path.
+## Persistence
 
-Player presence is a later stage: inspect the live `Player` prefab and movement/camera behavior before adding a guest avatar. The host zoo can be shared before avatar replication, but the UI must clearly show that interim scope.
+Before applying the first joined snapshot, a guest captures its own zoo and recording references. GameManager.SaveGame, SaveLoadSystem.SaveGame, and WavSaveLoadManager.Save are suppressed throughout the guest session and until restoration completes. Leaving restores the solo state before reenabling writes. Shared progress is saved only by the host through native save methods.
 
-## Validation gates
+The opt-in data-directory override redirects SaveLoadSystem._path and animal recording filenames. Rooted recording filenames also redirect the game's pre-load File.Exists checks. The local test runner additionally backs up the shared LocalLow directory and restores it in finally, and never modifies the live Steam DLL.
 
-1. Mod loads in the current IL2CPP build and sees Steam initialized. **Passed locally.**
-2. Friends-only lobby creation and enter callbacks work. **Passed with one Steam account.**
-3. Two distinct local GSE identities join the same lobby and exchange the protocol handshake. **Passed in isolated installs.** Real Steam invite acceptance remains pending.
-4. Host sends a full snapshot; guest receives it without writing over its local save. **Pending.**
-5. Guest requests an animal action; host validates and applies it once; both see the same result and gold. **Pending.**
-6. Recordings, positions, player presence, reconnect, and host-leave behavior are validated separately. **Pending.**
+## Boundaries
 
-Game assemblies, generated wrappers, recordings, and saves remain outside this repository.
-
-The GSE menu-only run created `save.json` under the shared Windows `LocalLow/DefaultCompany/MyVoiceZoo` directory. It was absent before testing; its test-created contents were backed up outside the repository and the pre-test state was restored. Future multi-process runners must back up and restore this directory, even for menu-only runs.
+The mod does not migrate hosts or provide voice chat. Network compatibility requires the same protocol, mod build, game version and GameAssembly digest. Generated interop and native game artifacts remain local. Compile, managed transport tests, GSE gameplay, visual checks, and real Steam two-account validation are reported separately.
