@@ -22,8 +22,6 @@ internal sealed class RemotePlayers : IDisposable
         public string DisplayName = string.Empty;
         public PlayerPose Target;
         public int CostumeId = -1;
-        public string? MoveBool;
-        public string? MoveFloat;
     }
 
     private readonly Dictionary<ulong, Replica> _replicas = new();
@@ -76,10 +74,7 @@ internal sealed class RemotePlayers : IDisposable
             scale.x = Mathf.Abs(scale.x);
             replica.Root.transform.localScale = scale;
         }
-        if (replica.MoveBool != null)
-            replica.Animator.SetBool(replica.MoveBool, pose.Moving);
-        if (replica.MoveFloat != null)
-            replica.Animator.SetFloat(replica.MoveFloat, pose.Moving ? 1f : 0f);
+        replica.Animator.SetBool("isRun", pose.Moving);
         if (replica.CostumeId != pose.CostumeId)
         {
             var asset = GetCostumeAsset(pose.CostumeId);
@@ -217,30 +212,16 @@ internal sealed class RemotePlayers : IDisposable
                 var resolver = visual.gameObject.AddComponent<SpriteResolver>();
                 resolvers.Add((nativeResolver, resolver));
             }
-            if (!_reportedVisuals)
+            var reportStages = !_reportedVisuals;
+            if (reportStages)
             {
                 MelonLogger.Msg($"COOP_VISUAL_SOURCE renderer={VisualPath(local.spriteRenderer.transform, local.transform)} animator={VisualPath(local.animator.transform, local.transform)} library={VisualPath(local._spriteLibrary.transform, local.transform)} renderers={renderers.Count} resolvers={resolvers.Count}");
-                _reportedVisuals = true;
             }
 
             var animator = animatorObject.gameObject.AddComponent<Animator>();
             animator.runtimeAnimatorController = local.animator.runtimeAnimatorController;
             animator.fireEvents = false;
-            string? moveBool = null;
-            string? moveFloat = null;
-            for (var i = 0; i < local.animator.parameterCount; i++)
-            {
-                var parameter = local.animator.GetParameterInternal(i);
-                if (parameter == null) continue;
-                if (!parameter.name.Contains("move", StringComparison.OrdinalIgnoreCase) &&
-                    !parameter.name.Contains("walk", StringComparison.OrdinalIgnoreCase) &&
-                    !parameter.name.Contains("speed", StringComparison.OrdinalIgnoreCase))
-                    continue;
-                if (parameter.type == AnimatorControllerParameterType.Bool)
-                    moveBool = parameter.name;
-                if (parameter.type == AnimatorControllerParameterType.Float)
-                    moveFloat = parameter.name;
-            }
+            if (reportStages) MelonLogger.Msg("COOP_VISUAL_ANIMATOR_READY");
 
             var nameObject = new GameObject("Peer name");
             nameObject.transform.SetParent(root.transform, false);
@@ -256,10 +237,16 @@ internal sealed class RemotePlayers : IDisposable
             name.color = Color.white;
             name.renderer.sortingLayerID = renderer.sortingLayerID;
             name.renderer.sortingOrder = renderer.sortingOrder + 1;
+            if (reportStages) MelonLogger.Msg("COOP_VISUAL_NAME_READY");
             root.SetActive(true);
             foreach (var (source, clone) in resolvers)
                 clone.SetCategoryAndLabel(source.GetCategory(), source.GetLabel());
             library.RefreshSpriteResolvers();
+            if (reportStages)
+            {
+                MelonLogger.Msg("COOP_VISUAL_READY");
+                _reportedVisuals = true;
+            }
 
             return new Replica
             {
@@ -269,8 +256,6 @@ internal sealed class RemotePlayers : IDisposable
                 Animator = animator,
                 Library = library,
                 Name = name,
-                MoveBool = moveBool,
-                MoveFloat = moveFloat,
                 DisplayName = string.Empty
             };
         }
