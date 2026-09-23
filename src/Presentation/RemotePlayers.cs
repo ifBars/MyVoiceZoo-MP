@@ -1,5 +1,6 @@
 using Il2Cpp;
 using Il2CppTMPro;
+using MelonLoader;
 using UnityEngine;
 using UnityEngine.U2D.Animation;
 
@@ -14,6 +15,7 @@ internal sealed class RemotePlayers : IDisposable
     {
         public GameObject Root = null!;
         public SpriteRenderer Renderer = null!;
+        public List<(SpriteRenderer Source, SpriteRenderer Clone)> Renderers = new();
         public Animator Animator = null!;
         public SpriteLibrary Library = null!;
         public TextMeshPro Name = null!;
@@ -28,6 +30,7 @@ internal sealed class RemotePlayers : IDisposable
     private readonly Dictionary<int, SpriteLibraryAsset> _costumeAssets = new();
     private Player? _source;
     private bool _disposed;
+    private bool _reportedVisuals;
 
     public PlayerPose? TickLocalPose()
     {
@@ -65,10 +68,10 @@ internal sealed class RemotePlayers : IDisposable
         var local = _source;
         if (local != null && local.spriteRenderer != null)
         {
-            replica.Renderer.flipX = local.spriteRenderer.flipX ^
-                (local.isFacingRight != pose.FacingRight) ^
-                (local.spriteRenderer.transform.lossyScale.x < 0f);
-            var scale = local.spriteRenderer.transform.lossyScale;
+            foreach (var (source, clone) in replica.Renderers)
+                if (source != null && clone != null)
+                    clone.flipX = source.flipX ^ (local.isFacingRight != pose.FacingRight);
+            var scale = local.transform.lossyScale;
             scale.x = Mathf.Abs(scale.x);
             replica.Root.transform.localScale = scale;
         }
@@ -165,17 +168,59 @@ internal sealed class RemotePlayers : IDisposable
             _source = local;
         }
 
+        // Recreate only the paths occupied by visual components. Animation clips
+        // bind by relative transform path, so putting everything on one object
+        // would leave clips and SpriteResolver without their native targets.
         var root = new GameObject($"MVZ-MP peer {peer}");
-        var renderer = root.AddComponent<SpriteRenderer>();
-        renderer.sprite = local.spriteRenderer.sprite;
-        renderer.sharedMaterial = local.spriteRenderer.sharedMaterial;
-        renderer.sortingLayerID = local.spriteRenderer.sortingLayerID;
-        renderer.sortingOrder = local.spriteRenderer.sortingOrder;
-        renderer.color = local.spriteRenderer.color;
+        root.SetActive(false);
+        var paths = new Dictionary<int, Transform>();
+        var libraryObject = VisualTransform(local._spriteLibrary.transform, local.transform, root.transform, paths);
+        var animatorObject = VisualTransform(local.animator.transform, local.transform, root.transform, paths);
+        if (libraryObject == null || animatorObject == null)
+        {
+            UnityEngine.Object.Destroy(root);
+            return null;
+        }
 
-        var library = root.AddComponent<SpriteLibrary>();
+        var library = libraryObject.gameObject.AddComponent<SpriteLibrary>();
         library.spriteLibraryAsset = local._spriteLibrary.spriteLibraryAsset;
-        var animator = root.AddComponent<Animator>();
+        SpriteRenderer? renderer = null;
+        var renderers = new List<(SpriteRenderer Source, SpriteRenderer Clone)>();
+        foreach (var nativeRenderer in local.GetComponentsInChildren<SpriteRenderer>(true))
+        {
+            var visual = VisualTransform(nativeRenderer.transform, local.transform, root.transform, paths);
+            if (visual == null) continue;
+            var clone = visual.gameObject.AddComponent<SpriteRenderer>();
+            clone.sprite = nativeRenderer.sprite;
+            clone.sharedMaterial = nativeRenderer.sharedMaterial;
+            clone.sortingLayerID = nativeRenderer.sortingLayerID;
+            clone.sortingOrder = nativeRenderer.sortingOrder;
+            clone.color = nativeRenderer.color;
+            clone.flipX = nativeRenderer.flipX;
+            renderers.Add((nativeRenderer, clone));
+            if (nativeRenderer == local.spriteRenderer) renderer = clone;
+        }
+        if (renderer == null)
+        {
+            UnityEngine.Object.Destroy(root);
+            return null;
+        }
+
+        var resolvers = new List<(SpriteResolver Source, SpriteResolver Clone)>();
+        foreach (var nativeResolver in local.GetComponentsInChildren<SpriteResolver>(true))
+        {
+            var visual = VisualTransform(nativeResolver.transform, local.transform, root.transform, paths);
+            if (visual == null || visual.GetComponent<SpriteRenderer>() == null) continue;
+            var resolver = visual.gameObject.AddComponent<SpriteResolver>();
+            resolvers.Add((nativeResolver, resolver));
+        }
+        if (!_reportedVisuals)
+        {
+            MelonLogger.Msg($"COOP_VISUAL_SOURCE renderer={VisualPath(local.spriteRenderer.transform, local.transform)} animator={VisualPath(local.animator.transform, local.transform)} library={VisualPath(local._spriteLibrary.transform, local.transform)} renderers={renderers.Count} resolvers={resolvers.Count}");
+            _reportedVisuals = true;
+        }
+
+        var animator = animatorObject.gameObject.AddComponent<Animator>();
         animator.runtimeAnimatorController = local.animator.runtimeAnimatorController;
         animator.fireEvents = false;
         string? moveBool = null;
@@ -205,11 +250,16 @@ internal sealed class RemotePlayers : IDisposable
         name.color = Color.white;
         name.renderer.sortingLayerID = renderer.sortingLayerID;
         name.renderer.sortingOrder = renderer.sortingOrder + 1;
+        root.SetActive(true);
+        foreach (var (source, clone) in resolvers)
+            clone.SetCategoryAndLabel(source.GetCategory(), source.GetLabel());
+        library.RefreshSpriteResolvers();
 
         return new Replica
         {
             Root = root,
             Renderer = renderer,
+            Renderers = renderers,
             Animator = animator,
             Library = library,
             Name = name,
@@ -217,6 +267,37 @@ internal sealed class RemotePlayers : IDisposable
             MoveFloat = moveFloat,
             DisplayName = string.Empty
         };
+    }
+
+    private static Transform? VisualTransform(Transform source, Transform sourceRoot, Transform replicaRoot,
+        Dictionary<int, Transform> paths)
+    {
+        if (source == sourceRoot)
+            return replicaRoot;
+        if (source == null || source.parent == null)
+            return null;
+        var parent = VisualTransform(source.parent, sourceRoot, replicaRoot, paths);
+        if (parent == null)
+            return null;
+        var id = source.GetInstanceID();
+        if (paths.TryGetValue(id, out var existing))
+            return existing;
+        var obj = new GameObject(source.name);
+        obj.transform.SetParent(parent, false);
+        obj.transform.localPosition = source.localPosition;
+        obj.transform.localRotation = source.localRotation;
+        obj.transform.localScale = source.localScale;
+        paths.Add(id, obj.transform);
+        return obj.transform;
+    }
+
+    private static string VisualPath(Transform source, Transform root)
+    {
+        if (source == root) return ".";
+        var parts = new Stack<string>();
+        for (var current = source; current != null && current != root; current = current.parent)
+            parts.Push(current.name);
+        return string.Join("/", parts);
     }
 
     private SpriteLibraryAsset? GetCostumeAsset(int id)
