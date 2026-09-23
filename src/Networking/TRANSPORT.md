@@ -15,8 +15,8 @@ than switching transports under an active game state.
 
 Limits: 4 MiB per application message, 8 MiB queued output, 8 MiB incomplete
 or blocked incoming messages, 128 pending incoming messages, and four chunks
-submitted per game update. Native sends pause while Steam reports roughly
-2 MiB of pending or unacknowledged reliable data for a peer. Incomplete messages and missing sequence gaps
+submitted per game update on lobby chat, or one native chunk per update.
+Incomplete messages and missing sequence gaps
 expire after 30 seconds. A failed send or native session failure ends the lobby
 session so peers do not continue with silently missing zoo state.
 
