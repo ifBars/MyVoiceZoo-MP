@@ -33,6 +33,8 @@ Check(!reassembly.Accept(11, chunks[0], now).Any(), "Duplicate message delivered
 var second = Packets(2, new byte[] { 7 }).Single();
 var third = Packets(3, new byte[] { 8 }).Single();
 Check(!reassembly.Accept(11, third, now).Any(), "Delivered a later sequence early.");
+Check(!reassembly.Accept(11, third, now).Any(), "Duplicate completed message delivered.");
+Check(reassembly.PendingMessages == 1, "Duplicate completed message retained an assembly.");
 Check(reassembly.Accept(11, second, now).Select(x => x.Payload[0]).SequenceEqual(new byte[] { 7, 8 }), "Sequence delivery order failed.");
 Check(reassembly.Accept(33, Packets(1, Array.Empty<byte>()).Single(), now).Single().Payload.Length == 0, "Zero length payload failed.");
 

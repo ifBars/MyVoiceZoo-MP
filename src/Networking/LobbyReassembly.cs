@@ -18,7 +18,7 @@ internal sealed class LobbyReassembly
 
         if (!_receivers.TryGetValue(sender, out var receiver))
             _receivers[sender] = receiver = new Receiver();
-        if (packet.Sequence < receiver.NextSequence)
+        if (packet.Sequence < receiver.NextSequence || receiver.Completed.ContainsKey(packet.Sequence))
             yield break;
 
         var key = (sender, packet.Sequence);
