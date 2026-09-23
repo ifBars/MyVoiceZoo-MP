@@ -190,8 +190,11 @@ internal sealed class CoopPanel : IDisposable
         _hostButton = MakeButton("Host zoo", 120f, quit, nativeText, _host);
         _inviteButton = MakeButton("Invite friends", 26f, quit, nativeText, _invite);
         _leaveButton = MakeButton("Leave co-op", -68f, quit, nativeText, _leave);
-        var note = MakeText("Help", _root.transform, nativeText, "Friends share the host's zoo.\nYour solo zoo returns when you leave.", 22f);
-        Position(note.rectTransform, new Vector2(0f, -190f), new Vector2(340f, 118f));
+        var note = MakeText("Help", _root.transform, nativeText, "Friends share the host's zoo.\nYour solo zoo returns when you leave.", 20f);
+        Position(note.rectTransform, new Vector2(0f, -170f), new Vector2(340f, 104f));
+        var inviteHelp = MakeText("Invite help", _root.transform, nativeText,
+            "Friend appearing offline?\nPress Shift+Tab, select them, then choose Invite to Game.", 19f);
+        Position(inviteHelp.rectTransform, new Vector2(0f, -293f), new Vector2(340f, 110f));
         MelonLoader.MelonLogger.Msg("COOP SETTINGS Native settings controls installed");
     }
 

@@ -56,3 +56,7 @@ Widened the native settings popup from 1400 to 1560 UI units and retained Quit G
 The startup hint waits for the splash, game loading screen, and microphone guide to finish, then uses a four-second unscaled timer (brief fade-in, full visibility, final one-second fade-out). Earlier captures hidden behind the microphone guide were rejected; the final readiness condition includes that native guide explicitly.
 
 Final startup capture was visually inspected at full opacity and at alpha 0.50, over the loaded zoo. Logs show display at 06:43:09.789 and removal at 06:43:13.766. The settings Host/Leave and hide checks also passed on this build.
+
+## 0.2.3 invite help
+
+Added settings help explaining the user's Shift+Tab / friend menu / Invite to Game workaround for friends appearing offline. The normal invite button retains the native Steam lobby invite picker. Release build, isolated Host/Leave callbacks, settings hide, and screenshot layout inspection passed. This UI-only change does not establish separate offline-friend invitation testing.
