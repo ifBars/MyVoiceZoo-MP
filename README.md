@@ -1,4 +1,4 @@
-# MVZ-MP
+# MyVoiceZoo Together
 
 A Steam co-op mod for MyVoiceZoo. Up to four friends share the host's zoo using the game's normal adoption, recording, building, and costume interfaces.
 

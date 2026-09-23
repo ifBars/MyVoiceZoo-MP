@@ -3,7 +3,10 @@ using MvzMp.Game;
 using MvzMp.Presentation;
 using UnityEngine;
 
-[assembly: MelonInfo(typeof(MvzMp.MvzMpMod), "MVZ-MP", "0.2.3", "Bars")]
+[assembly: MelonInfo(typeof(MvzMp.MvzMpMod), "MyVoiceZoo Together", "1.0.0", "Bars")]
+[assembly: System.Reflection.AssemblyVersion("1.0.0.0")]
+[assembly: System.Reflection.AssemblyFileVersion("1.0.0.0")]
+[assembly: System.Reflection.AssemblyInformationalVersion("1.0.0")]
 [assembly: MelonGame("DefaultCompany", "MyVoiceZoo")]
 
 namespace MvzMp;

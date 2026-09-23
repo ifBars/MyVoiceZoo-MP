@@ -6,6 +6,9 @@ param(
     [string]$HostSteamId = '76561198000040001',
     [string]$ClientSteamId = '76561198000040002',
     [string]$Scenario = '',
+    [string]$HostName = 'MVZMP-host',
+    [string]$ClientName = 'MVZMP-client',
+    [switch]$Preview,
     [int]$TimeoutSeconds = 120,
     [switch]$SkipBuild,
     [switch]$Rendered,
@@ -17,6 +20,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+if ($HostName -match '[\r\n]' -or $ClientName -match '[\r\n]') { throw 'Player names must be single-line.' }
 if (($Microphone -or $Motion) -and $Scenario -ne 'shared-zoo') { throw '-Microphone and -Motion require -Scenario shared-zoo.' }
 if ($Settings -and -not $Rendered) { throw '-Settings requires -Rendered for visual inspection.' }
 $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
@@ -126,11 +130,12 @@ try {
     Write-Output "User-data backup: $originalSave"
     if ($saveWasPresent) { Move-Item -LiteralPath $save -Destination $originalSave }
     $saveIsGuarded = $true
-    Copy-Install $hostInstall 'MVZMP-host' $HostSteamId
-    Copy-Install $client 'MVZMP-client' $ClientSteamId
+    Copy-Install $hostInstall $HostName $HostSteamId
+    Copy-Install $client $ClientName $ClientSteamId
     $hostArgs = @('--mvzmp-host', '-batchmode', '-nographics')
     $clientArgs = @('-batchmode', '-nographics')
     if ($Rendered) { $hostArgs = @('--mvzmp-host', '-screen-fullscreen', '0', '-screen-width', '1280', '-screen-height', '720'); $clientArgs = @('-screen-fullscreen', '0', '-screen-width', '1280', '-screen-height', '720') }
+    if ($Preview) { $hostArgs += '--mvzmp-preview'; $clientArgs += '--mvzmp-preview' }
     if ($LobbyChat) { $hostArgs += '--mvzmp-lobby-chat'; $clientArgs += '--mvzmp-lobby-chat' }
     if ($Microphone) { $hostArgs += '--mvzmp-smoke-microphone'; $clientArgs += '--mvzmp-smoke-microphone' }
     if ($Motion) { $hostArgs += '--mvzmp-smoke-motion'; $clientArgs += '--mvzmp-smoke-motion' }

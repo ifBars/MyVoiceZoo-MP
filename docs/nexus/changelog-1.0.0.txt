@@ -1,0 +1,7 @@
+Initial public release.
+- Shared host zoo through Steam co-op lobbies.
+- Shared animals, recordings, placement, purchases and progress.
+- Remote players with costumes and nameplates.
+- Co-op controls in native Settings, startup hint and offline-friend invitation guidance.
+- Buffered remote movement and native sprite sorting.
+- Guest solo-save protection and restoration on leaving.

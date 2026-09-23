@@ -60,3 +60,9 @@ Final startup capture was visually inspected at full opacity and at alpha 0.50, 
 ## 0.2.3 invite help
 
 Added settings help explaining the user's Shift+Tab / friend menu / Invite to Game workaround for friends appearing offline. The normal invite button retains the native Steam lobby invite picker. Release build, isolated Host/Leave callbacks, settings hide, and screenshot layout inspection passed. This UI-only change does not establish separate offline-friend invitation testing.
+
+## 1.0.0 initial release preparation
+
+The author reports that the latest two-player Steam playtest is working. This is user-reported gameplay evidence, separate from automated local testing. Four-player sessions and extended stress testing remain unverified.
+
+The Release build passed with zero warnings/errors. Managed transport and presentation tests passed during release preparation. The rendered GSE shared-zoo scenario passed on the final 1.0.0 candidate in `run-20260923-071245-7b51eca7`, including recording transfer, guest reconnect, host departure, and solo-zoo restoration. The opt-in preview fixture used players Bars and Juniper and animal Bean. Its actual gameplay capture supplies the Nexus artwork, with cropping and title text added using ImageMagick; screenshots remain outside Git and the player download.

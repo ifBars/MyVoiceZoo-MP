@@ -1,0 +1,66 @@
+[center][size=6][b]MyVoiceZoo Together[/b][/size]
+[size=4]One zoo. Your friends. Everyone's ridiculous animal voices.[/size][/center]
+
+Turn your zoo into a shared hangout. MyVoiceZoo Together adds Steam co-op to MyVoiceZoo so you and your friends can adopt animals, record their voices, arrange the zoo and unlock upgrades together.
+
+Co-op uses the game's familiar menus. Open Settings, host your zoo and invite a friend. You can see each other running around, with names above other players and independent costumes.
+
+[size=4][b]Features[/b][/size]
+[list]
+[*]Steam lobbies with room for up to four players, including the host.
+[*]Shared animals, names, voice recordings and animal placement.
+[*]Shared gold, area unlocks, camps and purchased costumes.
+[*]Independent player movement and equipped costumes, with nameplates above other players.
+[*]Host, Invite friends and Leave co-op controls inside the native Settings menu.
+[*]A brief startup hint to help players find the co-op controls.
+[*]Guest solo progress is kept separate from the host's shared zoo.
+[/list]
+
+[size=4][b]Requirements[/b][/size]
+[list]
+[*]The Steam version of MyVoiceZoo on Windows.
+[*][url=https://github.com/LavaGang/MelonLoader/releases]MelonLoader[/url] 0.7.3 x64, the version used for development and testing.
+[*]The same game build and mod version installed by every player.
+[*]Steam running, with the Steam overlay enabled for invitations.
+[/list]
+
+[size=4][b]Installation[/b][/size]
+[list=1]
+[*]Install MelonLoader 0.7.3 x64 into MyVoiceZoo.
+[*]Launch the game once so MelonLoader can finish its initial setup, then close it.
+[*]Download and extract MyVoiceZoo Together.
+[*]Copy [b]MVZ.MP.dll[/b] into the game's [b]Mods[/b] folder, replacing the previous copy if you are updating.
+[*]Make sure your friends install the same version.
+[/list]
+The download includes the mod DLL and a README. MelonLoader is a separate requirement.
+
+[size=4][b]Playing together[/b][/size]
+[list=1]
+[*]Load the zoo you want to share.
+[*]Open the game's [b]Settings[/b] menu and select [b]Host zoo[/b].
+[*]Select [b]Invite friends[/b] and send a Steam invitation. Your friend joins by accepting it.
+[*]Use the normal adoption, recording, shop and placement interfaces to build together.
+[*]Select [b]Leave co-op[/b] when you are finished.
+[/list]
+Keyboard shortcuts: [b]F6[/b] hosts, [b]F7[/b] opens invites and [b]F8[/b] leaves.
+
+[b]Friend appearing offline?[/b] If they are missing from Steam's invite picker, press [b]Shift+Tab[/b], select your friend and use [b]Invite to Game[/b] under MyVoiceZoo.
+
+[size=4][b]Saves and shared progress[/b][/size]
+The [b]host owns the shared zoo[/b] and keeps its progress. While visiting, guests work in the host's zoo; leaving restores their own zoo. Guests do not take a copy of the host's zoo home.
+
+If the host leaves, the session ends and guests return to their own zoos. Host migration is not supported. An animal is reserved while another player is editing it, and the host validates shared purchases.
+
+[size=4][b]Microphones and troubleshooting[/b][/size]
+[b]Silent recording:[/b] Check the intended microphone in Windows and restart the game after changing devices. Preview your recording in the animal editor before completing it. The mod shares animal recordings; it does not add live voice chat.
+
+[b]Cannot join:[/b] Check that both players have the same game build and mod version, Steam is running and its overlay is enabled. Leave any existing session before trying again.
+
+[b]Reporting a problem:[/b] Describe what happened and whether you were hosting or visiting. Include the mod version and both players' [b]MelonLoader/Latest.log[/b] files where possible. Preserve those logs before restarting.
+
+[size=4][b]Version 1.0.0[/b][/size]
+Initial public release. Tested through local co-op checks and two-player Steam playtesting. Lobbies allow four players; four-player sessions and extended stress testing have not been independently verified.
+
+To uninstall, close the game and remove [b]Mods/MVZ.MP.dll[/b].
+
+[b]Created by Bars.[/b] This is an unofficial community mod for MyVoiceZoo.

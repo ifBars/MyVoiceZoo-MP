@@ -20,7 +20,7 @@ internal sealed class SmokeScenario
     private bool _failed;
     private ulong _originalLobby;
     private string? _soloFileHash;
-    private const string Name = "Coop test";
+    private static readonly string Name = Environment.GetCommandLineArgs().Contains("--mvzmp-preview") ? "Bean" : "Coop test";
     public SmokeScenario(CoopRuntime runtime, SteamLobby lobby)
     {
         _runtime = runtime; _lobby = lobby;
