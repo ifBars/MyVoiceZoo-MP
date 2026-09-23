@@ -8,16 +8,18 @@ internal static class LobbyPackets
     internal const int MaxPayload = 4 * 1024 * 1024;
     internal const int ChunkPayload = 3800;
     internal const int NativeChunkPayload = 64 * 1024;
-    internal const int HeaderSize = 30;
+    internal const int HeaderSize = 46;
     internal const int MaxPacket = HeaderSize + ChunkPayload;
-    private const uint Magic = 0x32505A4D; // MZP2
-    private const byte Version = 2;
+    private const uint Magic = 0x33505A4D; // MZP3
+    private const byte Version = 3;
 
-    internal static byte[] Encode(uint sequence, ulong recipient, int total, int offset, ReadOnlySpan<byte> chunk, int chunkSize = ChunkPayload)
+    internal static byte[] Encode(uint sequence, ulong recipient, ulong senderEpoch, ulong recipientEpoch, int total, int offset,
+        ReadOnlySpan<byte> chunk, int chunkSize = ChunkPayload)
     {
         if (chunkSize != ChunkPayload && chunkSize != NativeChunkPayload)
             throw new ArgumentOutOfRangeException(nameof(chunkSize));
-        if (sequence == 0 || recipient == 0 || total < 0 || total > MaxPayload ||
+        if (sequence == 0 || recipient == 0 || senderEpoch == 0 || recipientEpoch == 0 ||
+            total < 0 || total > MaxPayload ||
             offset < 0 || offset > total || chunk.Length > chunkSize ||
             (total == 0 ? offset != 0 || chunk.Length != 0 :
                 offset % chunkSize != 0 || chunk.Length != Math.Min(chunkSize, total - offset)))
@@ -28,9 +30,11 @@ internal static class LobbyPackets
         packet[4] = Version;
         BinaryPrimitives.WriteUInt32LittleEndian(packet.AsSpan(6), sequence);
         BinaryPrimitives.WriteUInt64LittleEndian(packet.AsSpan(10), recipient);
-        BinaryPrimitives.WriteInt32LittleEndian(packet.AsSpan(18), total);
-        BinaryPrimitives.WriteInt32LittleEndian(packet.AsSpan(22), offset);
-        BinaryPrimitives.WriteInt32LittleEndian(packet.AsSpan(26), chunk.Length);
+        BinaryPrimitives.WriteUInt64LittleEndian(packet.AsSpan(18), senderEpoch);
+        BinaryPrimitives.WriteUInt64LittleEndian(packet.AsSpan(26), recipientEpoch);
+        BinaryPrimitives.WriteInt32LittleEndian(packet.AsSpan(34), total);
+        BinaryPrimitives.WriteInt32LittleEndian(packet.AsSpan(38), offset);
+        BinaryPrimitives.WriteInt32LittleEndian(packet.AsSpan(42), chunk.Length);
         chunk.CopyTo(packet.AsSpan(HeaderSize));
         return packet;
     }
@@ -45,18 +49,25 @@ internal static class LobbyPackets
 
         var sequence = BinaryPrimitives.ReadUInt32LittleEndian(packet.Slice(6));
         var recipient = BinaryPrimitives.ReadUInt64LittleEndian(packet.Slice(10));
-        var total = BinaryPrimitives.ReadInt32LittleEndian(packet.Slice(18));
-        var offset = BinaryPrimitives.ReadInt32LittleEndian(packet.Slice(22));
-        var length = BinaryPrimitives.ReadInt32LittleEndian(packet.Slice(26));
-        if (sequence == 0 || recipient == 0 || total < 0 || total > MaxPayload ||
+        var senderEpoch = BinaryPrimitives.ReadUInt64LittleEndian(packet.Slice(18));
+        var recipientEpoch = BinaryPrimitives.ReadUInt64LittleEndian(packet.Slice(26));
+        var total = BinaryPrimitives.ReadInt32LittleEndian(packet.Slice(34));
+        var offset = BinaryPrimitives.ReadInt32LittleEndian(packet.Slice(38));
+        var length = BinaryPrimitives.ReadInt32LittleEndian(packet.Slice(42));
+        if (sequence == 0 || recipient == 0 || senderEpoch == 0 || recipientEpoch == 0 ||
+            total < 0 || total > MaxPayload ||
             offset < 0 || offset > total || length != packet.Length - HeaderSize ||
             (total == 0 ? offset != 0 || length != 0 :
                 offset % chunkSize != 0 || length != Math.Min(chunkSize, total - offset)))
             return false;
 
-        decoded = new LobbyPacket(sequence, recipient, total, offset, packet.Slice(HeaderSize).ToArray());
+        decoded = new LobbyPacket(sequence, recipient, senderEpoch, recipientEpoch, total, offset, packet.Slice(HeaderSize).ToArray());
         return true;
     }
+
+    internal static bool MatchesSession(LobbyPacket packet, ulong recipient, ulong senderEpoch, ulong recipientEpoch) =>
+        packet.Recipient == recipient && packet.SenderEpoch == senderEpoch && packet.RecipientEpoch == recipientEpoch;
 }
 
-internal readonly record struct LobbyPacket(uint Sequence, ulong Recipient, int Total, int Offset, byte[] Chunk);
+internal readonly record struct LobbyPacket(uint Sequence, ulong Recipient, ulong SenderEpoch, ulong RecipientEpoch,
+    int Total, int Offset, byte[] Chunk);

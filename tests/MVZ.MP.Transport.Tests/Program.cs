@@ -11,7 +11,7 @@ static IEnumerable<LobbyPacket> Packets(uint sequence, byte[] payload, int chunk
     for (var offset = 0; offset < payload.Length || offset == 0; offset += chunkSize)
     {
         var length = Math.Min(chunkSize, payload.Length - offset);
-        var bytes = LobbyPackets.Encode(sequence, 22, payload.Length, offset, payload.AsSpan(offset, length), chunkSize);
+        var bytes = LobbyPackets.Encode(sequence, 22, 111, 222, payload.Length, offset, payload.AsSpan(offset, length), chunkSize);
         Check(LobbyPackets.TryDecode(bytes, out var packet, chunkSize), "Encoded packet did not decode.");
         yield return packet;
         if (payload.Length == 0)
@@ -23,6 +23,13 @@ var now = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
 var payload = Enumerable.Range(0, LobbyPackets.ChunkPayload * 2 + 13).Select(i => (byte)i).ToArray();
 var chunks = Packets(1, payload).ToArray();
 Check(chunks.Length == 3, "Unexpected chunk count.");
+Check(chunks[0].SenderEpoch == 111 && chunks[0].RecipientEpoch == 222, "Join epochs were not framed.");
+var staleEpochWire = LobbyPackets.Encode(1, 22, 111, 222, 1, 0, new byte[] { 1 });
+Check(LobbyPackets.TryDecode(staleEpochWire, out var staleEpochPacket) &&
+    LobbyPackets.MatchesSession(staleEpochPacket, 22, 111, 222) &&
+    !LobbyPackets.MatchesSession(staleEpochPacket, 22, 111, 333) &&
+    !LobbyPackets.MatchesSession(staleEpochPacket, 22, 444, 222),
+    "Prior sender or recipient join epoch was accepted.");
 var reassembly = new LobbyReassembly();
 Check(!reassembly.Accept(11, chunks[2], now).Any(), "Delivered incomplete message.");
 Check(!reassembly.Accept(11, chunks[0], now).Any(), "Delivered incomplete message.");
@@ -34,7 +41,7 @@ var nativeChunks = Packets(1, nativePayload, LobbyPackets.NativeChunkPayload).To
 var nativeReassembly = new LobbyReassembly(LobbyPackets.NativeChunkPayload);
 Check(!nativeReassembly.Accept(99, nativeChunks[1], now).Any(), "Native message delivered incomplete.");
 Check(nativeReassembly.Accept(99, nativeChunks[0], now).Single().Payload.SequenceEqual(nativePayload), "Native chunk reassembly failed.");
-var nativeWire = LobbyPackets.Encode(1, 22, nativePayload.Length, 0, nativePayload.AsSpan(0, LobbyPackets.NativeChunkPayload), LobbyPackets.NativeChunkPayload);
+var nativeWire = LobbyPackets.Encode(1, 22, 111, 222, nativePayload.Length, 0, nativePayload.AsSpan(0, LobbyPackets.NativeChunkPayload), LobbyPackets.NativeChunkPayload);
 Check(!LobbyPackets.TryDecode(nativeWire, out _), "Native chunk accepted as lobby chat.");
 
 var second = Packets(2, new byte[] { 7 }).Single();
@@ -45,14 +52,14 @@ Check(reassembly.PendingMessages == 1, "Duplicate completed message retained an 
 Check(reassembly.Accept(11, second, now).Select(x => x.Payload[0]).SequenceEqual(new byte[] { 7, 8 }), "Sequence delivery order failed.");
 Check(reassembly.Accept(33, Packets(1, Array.Empty<byte>()).Single(), now).Single().Payload.Length == 0, "Zero length payload failed.");
 
-var invalid = LobbyPackets.Encode(1, 22, 1, 0, new byte[] { 1 });
+var invalid = LobbyPackets.Encode(1, 22, 111, 222, 1, 0, new byte[] { 1 });
 invalid[0] = 0;
 Check(!LobbyPackets.TryDecode(invalid, out _), "Corrupt magic accepted.");
 Check(!LobbyPackets.TryDecode(new byte[10], out _), "Short packet accepted.");
 Check(!LobbyPackets.TryDecode(new byte[LobbyPackets.MaxPacket + 1], out _), "Oversized packet accepted.");
 try
 {
-    LobbyPackets.Encode(1, 22, LobbyPackets.MaxPayload + 1, 0, Array.Empty<byte>());
+    LobbyPackets.Encode(1, 22, 111, 222, LobbyPackets.MaxPayload + 1, 0, Array.Empty<byte>());
     throw new Exception("Oversized message accepted.");
 }
 catch (ArgumentOutOfRangeException) { }

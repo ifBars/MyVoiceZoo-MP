@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Runtime.InteropServices;
+using System.Globalization;
 using Il2Cpp;
 using Il2CppInterop.Runtime.InteropTypes.Arrays;
 using Il2CppSteamworks;
@@ -11,12 +12,13 @@ namespace MvzMp;
 
 internal sealed class SteamLobby : IDisposable
 {
-    private const string ProtocolVersion = "2";
+    private const string ProtocolVersion = "3";
     private const string ModBuild = "0.2.0";
     private const string ProtocolKey = "mvzmp_version";
     private const string BuildKey = "mvzmp_build";
     private const string GameKey = "mvzmp_game";
     private const string TransportKey = "mvzmp_transport";
+    private const string EpochKey = "mvzmp_epoch";
     private const int NativeChannel = 27182;
     private const int MaxQueuedBytes = 8 * 1024 * 1024;
     private const int PacketsPerTick = 4;
@@ -29,8 +31,11 @@ internal sealed class SteamLobby : IDisposable
     private LobbyReassembly _reassembly = new();
     private readonly Queue<QueuedPacket> _outgoing = new();
     private readonly Dictionary<ulong, uint> _nextSequence = new();
+    private readonly Dictionary<ulong, ulong> _peerEpochs = new();
+    private readonly HashSet<ulong> _announcedPeers = new();
     private CSteamID _lobbyId;
     private ulong _hostSteamId;
+    private ulong _localEpoch;
     private ulong[] _members = Array.Empty<ulong>();
     private string? _gameFingerprint;
     private int _queuedBytes;
@@ -191,6 +196,7 @@ internal sealed class SteamLobby : IDisposable
         if (!IsInLobby)
             return;
         var previousMembers = _members;
+        var announcedPeers = _announcedPeers.ToArray();
         if (_useNative)
             foreach (var peer in previousMembers)
                 if (peer != LocalSteamId)
@@ -207,17 +213,20 @@ internal sealed class SteamLobby : IDisposable
         _outgoing.Clear();
         _queuedBytes = 0;
         _nextSequence.Clear();
+        _peerEpochs.Clear();
+        _announcedPeers.Clear();
+        _localEpoch = 0;
         _reassembly.Clear();
-        foreach (var peer in previousMembers)
-            if (peer != LocalSteamId)
-                PeerLeft?.Invoke(peer);
+        foreach (var peer in announcedPeers)
+            PeerLeft?.Invoke(peer);
         SessionChanged?.Invoke();
     }
 
     public bool Send(ulong peer, byte[] payload, bool reliable = true)
     {
         ArgumentNullException.ThrowIfNull(payload);
-        if (!IsInLobby || peer == LocalSteamId || !_members.Contains(peer))
+        if (!IsInLobby || peer == LocalSteamId || !_members.Contains(peer) ||
+            !_peerEpochs.TryGetValue(peer, out var recipientEpoch))
             return false;
         if (payload.Length > LobbyPackets.MaxPayload)
             throw new ArgumentOutOfRangeException(nameof(payload), "Application messages are limited to 4 MiB.");
@@ -236,7 +245,8 @@ internal sealed class SteamLobby : IDisposable
         for (var offset = 0; offset < payload.Length || offset == 0; offset += chunkSize)
         {
             var length = Math.Min(chunkSize, payload.Length - offset);
-            var packet = LobbyPackets.Encode(sequence, peer, payload.Length, offset, payload.AsSpan(offset, length), chunkSize);
+            var packet = LobbyPackets.Encode(sequence, peer, _localEpoch, recipientEpoch,
+                payload.Length, offset, payload.AsSpan(offset, length), chunkSize);
             _outgoing.Enqueue(new QueuedPacket(peer, sequence, packet));
             _queuedBytes += packet.Length;
             if (payload.Length == 0)
@@ -299,11 +309,14 @@ internal sealed class SteamLobby : IDisposable
         _reassembly = new LobbyReassembly(_useNative ? LobbyPackets.NativeChunkPayload : LobbyPackets.ChunkPayload);
         _lobbyId = lobby;
         _hostSteamId = owner;
+        do
+        {
+            _localEpoch = BitConverter.ToUInt64(RandomNumberGenerator.GetBytes(8));
+        } while (_localEpoch == 0);
+        SteamMatchmaking.SetLobbyMemberData(_lobbyId, EpochKey, _localEpoch.ToString("X16", CultureInfo.InvariantCulture));
         RefreshMembers(notify: false);
         SessionChanged?.Invoke();
-        foreach (var peer in _members)
-            if (peer != LocalSteamId)
-                PeerJoined?.Invoke(peer);
+        AnnounceReadyPeers();
         MelonLogger.Msg($"Joined lobby {LobbyId}; owner={owner}; members={_members.Length}; role={(IsHost ? "host" : "guest")}.");
     }
 
@@ -335,19 +348,64 @@ internal sealed class SteamLobby : IDisposable
         {
             if (peer == LocalSteamId || current.Contains(peer))
                 continue;
-            _nextSequence.Remove(peer);
-            _reassembly.RemovePeer(peer);
+            ResetPeer(peer, notify);
             if (_useNative)
             {
                 var identity = new SteamNetworkingIdentity();
                 identity.SetSteamID64(peer);
                 SteamNetworkingMessages.CloseSessionWithUser(ref identity);
             }
-            if (notify)
-                PeerLeft?.Invoke(peer);
         }
         foreach (var peer in _members)
-            if (notify && peer != LocalSteamId && !previous.Contains(peer))
+        {
+            if (peer == LocalSteamId)
+                continue;
+            if (!TryReadPeerEpoch(peer, out var epoch))
+            {
+                if (_peerEpochs.ContainsKey(peer))
+                    ResetPeer(peer, notify);
+                continue;
+            }
+            if (_peerEpochs.TryGetValue(peer, out var prior) && prior != epoch)
+                ResetPeer(peer, notify);
+            _peerEpochs[peer] = epoch;
+        }
+        if (notify)
+            AnnounceReadyPeers();
+    }
+
+    private bool TryReadPeerEpoch(ulong peer, out ulong epoch) =>
+        ulong.TryParse(SteamMatchmaking.GetLobbyMemberData(_lobbyId, new CSteamID(peer), EpochKey),
+            NumberStyles.HexNumber, CultureInfo.InvariantCulture, out epoch) && epoch != 0;
+
+    private void ResetPeer(ulong peer, bool notify)
+    {
+        _nextSequence.Remove(peer);
+        _reassembly.RemovePeer(peer);
+        _peerEpochs.Remove(peer);
+        DropQueuedForPeer(peer);
+        if (_announcedPeers.Remove(peer) && notify)
+            PeerLeft?.Invoke(peer);
+    }
+
+    private void DropQueuedForPeer(ulong peer)
+    {
+        if (_outgoing.Count == 0)
+            return;
+        var retained = _outgoing.Where(packet => packet.Peer != peer).ToArray();
+        _outgoing.Clear();
+        _queuedBytes = 0;
+        foreach (var packet in retained)
+        {
+            _outgoing.Enqueue(packet);
+            _queuedBytes += packet.Bytes.Length;
+        }
+    }
+
+    private void AnnounceReadyPeers()
+    {
+        foreach (var peer in _members)
+            if (peer != LocalSteamId && _peerEpochs.ContainsKey(peer) && _announcedPeers.Add(peer))
                 PeerJoined?.Invoke(peer);
     }
 
@@ -366,7 +424,7 @@ internal sealed class SteamLobby : IDisposable
         var bytes = new byte[count];
         for (var i = 0; i < count; i++)
             bytes[i] = buffer[i];
-        if (!LobbyPackets.TryDecode(bytes, out var packet) || packet.Recipient != LocalSteamId)
+        if (!LobbyPackets.TryDecode(bytes, out var packet) || !MatchesSession(sender.m_SteamID, packet))
             return;
         foreach (var (peer, payload) in _reassembly.Accept(sender.m_SteamID, packet, DateTime.UtcNow))
             MessageReceived?.Invoke(peer, payload);
@@ -420,7 +478,7 @@ internal sealed class SteamLobby : IDisposable
                         var bytes = new byte[message.m_cbSize];
                         Marshal.Copy(message.m_pData, bytes, 0, bytes.Length);
                         if (!LobbyPackets.TryDecode(bytes, out var packet, LobbyPackets.NativeChunkPayload) ||
-                            packet.Recipient != LocalSteamId)
+                            !MatchesSession(sender, packet))
                             continue;
                         foreach (var (peer, payload) in _reassembly.Accept(sender, packet, DateTime.UtcNow))
                             MessageReceived?.Invoke(peer, payload);
@@ -452,6 +510,10 @@ internal sealed class SteamLobby : IDisposable
         else
             SteamNetworkingMessages.CloseSessionWithUser(ref identity);
     }
+
+    private bool MatchesSession(ulong sender, LobbyPacket packet) =>
+        _peerEpochs.TryGetValue(sender, out var epoch) &&
+        LobbyPackets.MatchesSession(packet, LocalSteamId, epoch, _localEpoch);
 
     private bool TryJoinLaunchLobby()
     {
