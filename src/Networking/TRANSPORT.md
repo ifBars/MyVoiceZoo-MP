@@ -19,9 +19,11 @@ than switching transports under an active game state.
 Limits: 4 MiB per application message, 8 MiB queued output, 8 MiB incomplete
 or blocked incoming messages, 128 pending incoming messages, and four chunks
 submitted per game update on lobby chat, or one native chunk per update.
-Incomplete messages and missing sequence gaps
-expire after 30 seconds. A failed send or native session failure ends the lobby
-session so peers do not continue with silently missing zoo state.
+Incomplete messages and missing sequence gaps expire after 30 seconds. A
+nonrecoverable send or receive error ends the lobby session so peers do not
+continue with silently missing zoo state.
+If Steam reports its reliable send buffer full, the current chunk stays queued
+and is retried for up to 30 seconds. Other send errors end the session.
 
 The `reliable=false` option currently uses the reliable path because the
 ordered 64 KiB chunk format is not suitable for Steam's unreliable datagram

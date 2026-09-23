@@ -22,6 +22,7 @@ internal sealed class SteamLobby : IDisposable
     private const int NativeChannel = 27182;
     private const int MaxQueuedBytes = 8 * 1024 * 1024;
     private const int PacketsPerTick = 4;
+    private static readonly TimeSpan SendStallTimeout = TimeSpan.FromSeconds(30);
 
     private Callback<GameLobbyJoinRequested_t>? _joinRequested;
     private Callback<LobbyEnter_t>? _lobbyEntered;
@@ -39,6 +40,7 @@ internal sealed class SteamLobby : IDisposable
     private ulong[] _members = Array.Empty<ulong>();
     private string? _gameFingerprint;
     private int _queuedBytes;
+    private DateTime? _sendStalledSince;
     private bool _ready;
     private bool _creating;
     private bool _disposed;
@@ -140,15 +142,15 @@ internal sealed class SteamLobby : IDisposable
                 {
                     _outgoing.Dequeue();
                     _queuedBytes -= queued.Bytes.Length;
+                    _sendStalledSince = null;
                     continue;
                 }
-                bool sent;
+                EResult result;
                 try
                 {
-                    _outgoing.Dequeue();
-                    _queuedBytes -= queued.Bytes.Length;
-                    sent = _useNative ? SendNative(queued) :
-                        SteamMatchmaking.SendLobbyChatMsg(_lobbyId, new Il2CppStructArray<byte>(queued.Bytes), queued.Bytes.Length);
+                    result = _useNative ? SendNative(queued) :
+                        (SteamMatchmaking.SendLobbyChatMsg(_lobbyId, new Il2CppStructArray<byte>(queued.Bytes),
+                            queued.Bytes.Length) ? EResult.k_EResultOK : EResult.k_EResultFail);
                 }
                 catch (Exception exception)
                 {
@@ -156,12 +158,30 @@ internal sealed class SteamLobby : IDisposable
                     Leave();
                     return;
                 }
-                if (!sent)
+                if (_useNative && result == EResult.k_EResultLimitExceeded)
                 {
-                    MelonLogger.Error($"Steam rejected lobby packet to {queued.Peer}; message {queued.Sequence} cannot be delivered.");
+                    if (_sendStalledSince is null)
+                    {
+                        _sendStalledSince = DateTime.UtcNow;
+                        MelonLogger.Warning($"Steam reliable send buffer full for {queued.Peer}; waiting for capacity.");
+                    }
+                    else if (DateTime.UtcNow - _sendStalledSince >= SendStallTimeout)
+                    {
+                        MelonLogger.Error($"Steam reliable send stalled for {SendStallTimeout.TotalSeconds:0} seconds; ending session.");
+                        Leave();
+                        return;
+                    }
+                    break;
+                }
+                if (result != EResult.k_EResultOK)
+                {
+                    MelonLogger.Error($"Steam rejected packet to {queued.Peer}; message {queued.Sequence}; result={result}.");
                     Leave();
                     return;
                 }
+                _outgoing.Dequeue();
+                _queuedBytes -= queued.Bytes.Length;
+                _sendStalledSince = null;
             }
             if (_useNative)
                 ReceiveNative();
@@ -212,6 +232,7 @@ internal sealed class SteamLobby : IDisposable
         _members = Array.Empty<ulong>();
         _outgoing.Clear();
         _queuedBytes = 0;
+        _sendStalledSince = null;
         _nextSequence.Clear();
         _peerEpochs.Clear();
         _announcedPeers.Clear();
@@ -392,6 +413,8 @@ internal sealed class SteamLobby : IDisposable
     {
         if (_outgoing.Count == 0)
             return;
+        if (_outgoing.Peek().Peer == peer)
+            _sendStalledSince = null;
         var retained = _outgoing.Where(packet => packet.Peer != peer).ToArray();
         _outgoing.Clear();
         _queuedBytes = 0;
@@ -430,7 +453,7 @@ internal sealed class SteamLobby : IDisposable
             MessageReceived?.Invoke(peer, payload);
     }
 
-    private bool SendNative(QueuedPacket queued)
+    private EResult SendNative(QueuedPacket queued)
     {
         var identity = new SteamNetworkingIdentity();
         identity.SetSteamID64(queued.Peer);
@@ -438,11 +461,11 @@ internal sealed class SteamLobby : IDisposable
         try
         {
             Marshal.Copy(queued.Bytes, 0, pointer, queued.Bytes.Length);
-            var sent = SteamNetworkingMessages.SendMessageToUser(ref identity, pointer, (uint)queued.Bytes.Length,
-                Constants.k_nSteamNetworkingSend_Reliable, NativeChannel) == EResult.k_EResultOK;
+            var result = SteamNetworkingMessages.SendMessageToUser(ref identity, pointer, (uint)queued.Bytes.Length,
+                Constants.k_nSteamNetworkingSend_Reliable, NativeChannel);
             if (_nativeSendDiagnostics++ < 8)
-                MelonLogger.Msg($"Native send peer={queued.Peer} seq={queued.Sequence} bytes={queued.Bytes.Length} result={(sent ? "OK" : "failed")}.");
-            return sent;
+                MelonLogger.Msg($"Native send peer={queued.Peer} seq={queued.Sequence} bytes={queued.Bytes.Length} result={result}.");
+            return result;
         }
         finally
         {
