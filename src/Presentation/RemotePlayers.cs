@@ -1,4 +1,5 @@
 using Il2Cpp;
+using Il2CppTMPro;
 using UnityEngine;
 using UnityEngine.U2D.Animation;
 
@@ -15,11 +16,16 @@ internal sealed class RemotePlayers : IDisposable
         public SpriteRenderer Renderer = null!;
         public Animator Animator = null!;
         public SpriteLibrary Library = null!;
+        public TextMeshPro Name = null!;
         public string DisplayName = string.Empty;
         public PlayerPose Target;
+        public int CostumeId = -1;
+        public string? MoveBool;
+        public string? MoveFloat;
     }
 
     private readonly Dictionary<ulong, Replica> _replicas = new();
+    private readonly Dictionary<int, SpriteLibraryAsset> _costumeAssets = new();
     private Player? _source;
     private bool _disposed;
 
@@ -50,18 +56,36 @@ internal sealed class RemotePlayers : IDisposable
             replica.Root.transform.position = new Vector3(pose.X, pose.Y, pose.Z);
         }
 
-        replica.DisplayName = displayName;
+        if (replica.DisplayName != displayName)
+        {
+            replica.DisplayName = displayName;
+            replica.Name.text = displayName.Length > 24 ? displayName[..24] : displayName;
+        }
         replica.Target = pose;
         var local = _source;
         if (local != null && local.spriteRenderer != null)
         {
-            replica.Renderer.flipX = local.spriteRenderer.flipX;
+            replica.Renderer.flipX = local.spriteRenderer.flipX ^
+                (local.isFacingRight != pose.FacingRight) ^
+                (local.spriteRenderer.transform.lossyScale.x < 0f);
             var scale = local.spriteRenderer.transform.lossyScale;
-            if (local.isFacingRight != pose.FacingRight)
-                scale.x = -scale.x;
+            scale.x = Mathf.Abs(scale.x);
             replica.Root.transform.localScale = scale;
         }
-        replica.Animator.speed = pose.Moving ? 1f : 0f;
+        if (replica.MoveBool != null)
+            replica.Animator.SetBool(replica.MoveBool, pose.Moving);
+        if (replica.MoveFloat != null)
+            replica.Animator.SetFloat(replica.MoveFloat, pose.Moving ? 1f : 0f);
+        if (replica.CostumeId != pose.CostumeId)
+        {
+            var asset = GetCostumeAsset(pose.CostumeId);
+            if (asset != null)
+            {
+                replica.Library.spriteLibraryAsset = asset;
+                replica.Library.RefreshSpriteResolvers();
+                replica.CostumeId = pose.CostumeId;
+            }
+        }
     }
 
     public void Tick()
@@ -117,6 +141,7 @@ internal sealed class RemotePlayers : IDisposable
         foreach (var replica in _replicas.Values)
             UnityEngine.Object.Destroy(replica.Root);
         _replicas.Clear();
+        _costumeAssets.Clear();
         _source = null;
     }
 
@@ -152,6 +177,34 @@ internal sealed class RemotePlayers : IDisposable
         library.spriteLibraryAsset = local._spriteLibrary.spriteLibraryAsset;
         var animator = root.AddComponent<Animator>();
         animator.runtimeAnimatorController = local.animator.runtimeAnimatorController;
+        animator.fireEvents = false;
+        string? moveBool = null;
+        string? moveFloat = null;
+        foreach (var parameter in local.animator.parameters)
+        {
+            if (!parameter.name.Contains("move", StringComparison.OrdinalIgnoreCase) &&
+                !parameter.name.Contains("walk", StringComparison.OrdinalIgnoreCase) &&
+                !parameter.name.Contains("speed", StringComparison.OrdinalIgnoreCase))
+                continue;
+            if (parameter.type == AnimatorControllerParameterType.Bool)
+                moveBool = parameter.name;
+            if (parameter.type == AnimatorControllerParameterType.Float)
+                moveFloat = parameter.name;
+        }
+
+        var nameObject = new GameObject("Peer name");
+        nameObject.transform.SetParent(root.transform, false);
+        nameObject.transform.localPosition = new Vector3(0f, 0.75f, 0f);
+        nameObject.transform.localScale = new Vector3(0.1f, 0.1f, 1f);
+        var name = nameObject.AddComponent<TextMeshPro>();
+        var nativeText = GameManager.Instance?._uiManager?
+            .GetComponentInChildren<TextMeshProUGUI>(true);
+        if (nativeText != null) name.font = nativeText.font;
+        name.fontSize = 3f;
+        name.alignment = TextAlignmentOptions.Center;
+        name.color = Color.white;
+        name.renderer.sortingLayerID = renderer.sortingLayerID;
+        name.renderer.sortingOrder = renderer.sortingOrder + 1;
 
         return new Replica
         {
@@ -159,7 +212,25 @@ internal sealed class RemotePlayers : IDisposable
             Renderer = renderer,
             Animator = animator,
             Library = library,
+            Name = name,
+            MoveBool = moveBool,
+            MoveFloat = moveFloat,
             DisplayName = string.Empty
         };
+    }
+
+    private SpriteLibraryAsset? GetCostumeAsset(int id)
+    {
+        if (id < 0 || id > 4)
+            return null;
+        if (_costumeAssets.TryGetValue(id, out var asset) && asset != null)
+            return asset;
+        var data = DataManager.Instance?.GetCostumeData((CostumeID)id);
+        if (data == null || string.IsNullOrEmpty(data.SpriteLibraryPath))
+            return null;
+        asset = Resources.Load<SpriteLibraryAsset>(data.SpriteLibraryPath);
+        if (asset != null)
+            _costumeAssets[id] = asset;
+        return asset;
     }
 }
