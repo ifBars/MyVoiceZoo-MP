@@ -13,6 +13,7 @@ internal static class SaveIsolation
     /// <summary>Assigned by the lobby coordinator; true only while joined as a guest.</summary>
     public static Func<bool>? IsGuest { get; set; }
 
+    public static bool IsIsolated => _dataDirectory != null;
     public static bool ShouldSave => !(IsGuest?.Invoke() ?? false);
 
     public static void Initialize()
@@ -119,3 +120,4 @@ internal static class SaveIsolation
         private static void Prefix(ref string filePath) => filePath = RedirectVoicePath(filePath);
     }
 }
+

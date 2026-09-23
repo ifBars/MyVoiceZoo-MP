@@ -13,8 +13,9 @@ internal sealed class SmokeScenario
     private readonly SteamLobby _lobby;
     private readonly bool _enabled;
     private readonly bool _host;
+    private readonly bool _verifySave;
     private DateTime _next, _started = DateTime.UtcNow;
-    private int _step, _animal = -1, _camp = -1;
+    private int _step, _animal = -1, _camp = -1, _costume = -1;
     private bool _failed;
     private ulong _originalLobby;
     private string? _soloFileHash;
@@ -22,26 +23,44 @@ internal sealed class SmokeScenario
     public SmokeScenario(CoopRuntime runtime, SteamLobby lobby)
     {
         _runtime = runtime; _lobby = lobby;
-        _enabled = Environment.GetCommandLineArgs().Contains("--mvzmp-smoke=shared-zoo") && Environment.GetCommandLineArgs().Any(a => a.StartsWith("--mvzmp-data-dir="));
+        _enabled = Environment.GetCommandLineArgs().Contains("--mvzmp-smoke=shared-zoo") && MvzMp.Game.SaveIsolation.IsIsolated;
+        _verifySave = Environment.GetCommandLineArgs().Contains("--mvzmp-smoke=verify-save") && MvzMp.Game.SaveIsolation.IsIsolated;
+        _enabled |= _verifySave;
         _host = Environment.GetCommandLineArgs().Contains("--mvzmp-host");
     }
     private static void CaptureScreenshot()
     {
-        if (!Environment.GetCommandLineArgs().Contains("-nographics")) ScreenCapture.CaptureScreenshot(Path.Combine(Path.GetDirectoryName(SaveLoadSystem._path)!, "coop.png"));
+        if (!Environment.GetCommandLineArgs().Contains("-nographics")) ScreenCapture.CaptureScreenshot(Path.Combine(Path.GetDirectoryName(SaveLoadSystem._path)!, Environment.GetCommandLineArgs().Contains("--mvzmp-host") ? $"coop-{DateTime.UtcNow:HHmmssfff}.png" : "coop.png"));
     }
     public void Tick()
     {
+        if (_enabled && _host && _step == 99 && _lobby.Members.Count > 1 && DateTime.UtcNow >= _next)
+        {
+            CaptureScreenshot(); _next = DateTime.UtcNow.AddSeconds(2);
+        }
         if (!_enabled || _failed || _step == 99 || DateTime.UtcNow < _next) return;
         _next = DateTime.UtcNow.AddSeconds(1);
         try
         {
             if ((DateTime.UtcNow - _started).TotalSeconds > 100) throw new Exception($"scenario timed out at step {_step}; {_runtime.Status}");
             if (!_runtime.Zoo.Ready) return;
+            if (_verifySave)
+            {
+                var loaded = _runtime.Zoo.Capture();
+                var savedAnimal = loaded.Animals.FirstOrDefault(a => a.Name == Name && a.Collected);
+                if (savedAnimal == null || savedAnimal.Voice.Length != 64 || !loaded.WindIsland || loaded.Camps.Length == 0 || Math.Abs(savedAnimal.X - 1.25f) > .01f) throw new Exception("Saved shared zoo did not reload completely.");
+                var clip = _runtime.Zoo.Animal(savedAnimal.Id)!.Voice;
+                if (clip == null || clip.samples != 240000 || clip.frequency != 48000) throw new Exception("Saved recording dimensions differ.");
+                MelonLogger.Msg($"PASS|verify-save|native save and 5 second WAV reloaded animal={savedAnimal.Id}"); _step = 99; return;
+            }
             if (_host)
             {
                 if (_step == 0)
                 {
                     Wallet.Instance.Init(1_000_000_000);
+                    var costume = Enum.GetValues<CostumeID>().First(c => !CostumeManager.Instance.IsBuyCostume(c));
+                    var required = DataManager.Instance.GetCostumeData(costume).conditionAnimalID;
+                    if (_runtime.Zoo.Animal(required) is { IsCollected: false }) AnimalManager.Instance.AnimalCollectStateChange(required, true);
                     TutorialManager.Instance.SetIsTutorialCompleted(true);
                     _runtime.Zoo.Save(); _step = 1;
                     MelonLogger.Msg("SMOKE host seeded disposable zoo");
@@ -80,8 +99,8 @@ internal sealed class SmokeScenario
                 var view = GameManager.Instance._uiManager._adoptView;
                 if (view._animal == null) return; // The native adoption reveal opens the editor after its animation.
                 view.OnNameInputValueChanged(Name);
-                var clip = AudioClip.Create("co-op smoke recording", 48000, 1, 48000, false);
-                var samples = new Il2CppStructArray<float>(48000);
+                var clip = AudioClip.Create("co-op smoke recording", 240000, 1, 48000, false);
+                var samples = new Il2CppStructArray<float>(240000);
                 for (var i = 0; i < samples.Length; i++) samples[i] = (float)Math.Sin(i * Math.PI * 2 * 440 / 48000) * .2f;
                 clip.SetData(samples, 0);
                 view.OnRecordingEnd(clip);
@@ -110,6 +129,25 @@ internal sealed class SmokeScenario
                 if (!state.WindIsland || !state.Camps.Contains(_camp) || animal.Name != Name || animal.Voice.Length != 64 || Math.Abs(animal.X - 1.25f) > .01f) return;
                 MelonLogger.Msg($"SMOKE client converged animal={_animal} voice={animal.Voice}");
                 if (_soloFileHash != null && _soloFileHash != Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(SaveLoadSystem._path)))) throw new Exception("Guest save changed during co-op.");
+                _costume = (int)Enum.GetValues<CostumeID>().First(c => !CostumeManager.Instance.IsBuyCostume(c) && CostumeManager.Instance.CanBuyCostumeCondition(c));
+                _runtime.Purchase("costume", _costume); _step = 50;
+            }
+            else if (_step == 50)
+            {
+                if (!CostumeManager.Instance.IsBuyCostume((CostumeID)_costume)) return;
+                CostumeManager.Instance.EquipCostume((CostumeID)_costume);
+                _runtime.BeginEdit(_animal, false); _step = 52;
+            }
+            else if (_step == 52)
+            {
+                var view = GameManager.Instance._uiManager._adoptView;
+                if (_runtime.EditingAnimal != _animal || view._animal == null) return;
+                view.OnNameInputValueChanged(Name); view.OnClickCompleteButton(); _step = 53;
+            }
+            else if (_step == 53)
+            {
+                if (_runtime.Status.Contains("Waiting") || _runtime.EditingAnimal >= 0) return;
+                MelonLogger.Msg($"SMOKE costume purchase and native edit verified costume={_costume}");
                 CaptureScreenshot(); _step = 51;
             }
             else if (_step == 51)
@@ -119,6 +157,7 @@ internal sealed class SmokeScenario
             else if (_step == 6)
             {
                 if (_runtime.IsGuest || _runtime.Zoo.Animal(_animal)!.IsCollected || (_soloFileHash != null && Wallet.Instance.CurrentGold != 12345)) throw new Exception("Guest's original zoo was not restored after leaving.");
+                _runtime.Voices.Clear(); // Force a fresh host-to-guest recording transfer on rejoin.
                 Il2CppSteamworks.SteamMatchmaking.JoinLobby(new Il2CppSteamworks.CSteamID(_originalLobby)); _step = 7;
             }
             else if (_step == 7)
@@ -135,6 +174,13 @@ internal sealed class SmokeScenario
         catch (Exception e) { _failed = true; MelonLogger.Error($"FAIL|shared-zoo|{e}"); }
     }
 }
+
+
+
+
+
+
+
 
 
 

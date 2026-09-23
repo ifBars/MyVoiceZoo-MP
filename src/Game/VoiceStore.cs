@@ -79,9 +79,11 @@ internal sealed class VoiceStore : IDisposable
         return Convert.ToHexString(hash.GetHashAndReset());
     }
 
-    public void Dispose()
+    public void Dispose() => Clear();
+    internal void Clear()
     {
         // Clips still assigned to native animals remain valid until the game unloads.
         _data.Clear(); _clips.Clear(); _identities.Clear(); _created.Clear(); _bytes = 0;
     }
 }
+

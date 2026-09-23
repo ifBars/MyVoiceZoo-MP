@@ -136,7 +136,7 @@ internal sealed class CoopRuntime : IDisposable
 
     private void Receive(ulong sender, byte[] bytes)
     {
-        if (!_lobby.IsInLobby || !_lobby.Members.Contains(sender) || bytes.Length > 4 * 1024 * 1024) return;
+        if (!_lobby.IsInLobby || sender == _lobby.LocalSteamId || !_lobby.Members.Contains(sender) || bytes.Length > 4 * 1024 * 1024) return;
         try
         {
             var m = JsonSerializer.Deserialize<WireMessage>(bytes);
@@ -176,7 +176,9 @@ internal sealed class CoopRuntime : IDisposable
                     Zoo.Validate(m.State); _waiting = m.State; TryApply(); break;
                 case "voice":
                     if (m.Voice == null || !_voiceRequests.ContainsKey(m.Voice.Hash)) return;
-                    Voices.Add(m.Voice); _voiceRequests.Remove(m.Voice.Hash); TryApply(); break;
+                    Voices.Add(m.Voice); _voiceRequests.Remove(m.Voice.Hash);
+                    MelonLogger.Msg($"COOP VOICE_RECEIVED {m.Voice.Hash} bytes={m.Voice.Pcm.Length}");
+                    TryApply(); break;
                 case "result":
                     if (!_pending.Remove(m.Request, out var command)) return;
                     if (m.Text != "ok") { Rollback(); Status = m.Text; CommandFinished?.Invoke("rejected:" + command.Kind); return; }
@@ -206,7 +208,7 @@ internal sealed class CoopRuntime : IDisposable
             _lobby.Broadcast(JsonSerializer.SerializeToUtf8Bytes(new WireMessage { Kind = "state", State = state }));
         }
         else _lobby.Broadcast(JsonSerializer.SerializeToUtf8Bytes(new WireMessage { Kind = "heartbeat" }));
-        Status = $"Hosting zoo · {_lobby.Members.Count} players";
+        Status = $"Hosting zoo · {_lobby.Members.Count} {(_lobby.Members.Count == 1 ? "player" : "players")}";
     }
     private void SendSnapshot(ulong peer) { if (_latest != null) Send(peer, new WireMessage { Kind = "state", State = _latest }); }
     private void TryApply()
@@ -336,6 +338,9 @@ internal sealed class CoopRuntime : IDisposable
         _lobby.MessageReceived -= Receive; _lobby.SessionChanged -= SessionChanged; _lobby.PeerLeft -= PeerLeft;
     }
 }
+
+
+
 
 
 
