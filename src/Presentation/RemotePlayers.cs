@@ -2,11 +2,11 @@ using Il2Cpp;
 using Il2CppTMPro;
 using MelonLoader;
 using UnityEngine;
+using UnityEngine.Rendering;
+using System.Diagnostics;
 using UnityEngine.U2D.Animation;
 
 namespace MvzMp.Presentation;
-
-public readonly record struct PlayerPose(float X, float Y, float Z, bool FacingRight, bool Moving, int CostumeId);
 
 /// <summary>Visual-only replicas. They do not clone Player, physics, input, camera, or audio.</summary>
 internal sealed class RemotePlayers : IDisposable
@@ -20,7 +20,7 @@ internal sealed class RemotePlayers : IDisposable
         public SpriteLibrary Library = null!;
         public TextMeshPro Name = null!;
         public string DisplayName = string.Empty;
-        public PlayerPose Target;
+        public readonly PoseBuffer Poses = new();
         public int CostumeId = -1;
         public bool NameReported;
     }
@@ -42,12 +42,15 @@ internal sealed class RemotePlayers : IDisposable
         var moving = player._input.sqrMagnitude > 0.0001f;
         var costume = CostumeManager.Instance;
         return new PlayerPose(position.x, position.y, position.z, player.isFacingRight, moving,
-            costume == null ? 0 : (int)costume.EquippedCostumeID);
+            costume == null ? 0 : (int)costume.EquippedCostumeID, Clock,
+            player.spriteRenderer.sortingLayerID, player.spriteRenderer.sortingOrder);
     }
+
+    private static double Clock => (double)Stopwatch.GetTimestamp() / Stopwatch.Frequency;
 
     public void Apply(ulong peer, string displayName, PlayerPose pose)
     {
-        if (_disposed || peer == 0)
+        if (_disposed || peer == 0 || !double.IsFinite(pose.Time))
             return;
 
         if (!_replicas.TryGetValue(peer, out var replica))
@@ -64,7 +67,15 @@ internal sealed class RemotePlayers : IDisposable
             replica.DisplayName = displayName;
             replica.Name.text = displayName.Length > 24 ? displayName[..24] : displayName;
         }
-        replica.Target = pose;
+        replica.Poses.Add(pose, Clock);
+    }
+
+    private void ApplyVisuals(Replica replica, PlayerPose pose)
+    {
+        replica.Renderer.sortingLayerID = pose.SortingLayer;
+        replica.Renderer.sortingOrder = pose.SortingOrder;
+        replica.Name.renderer.sortingLayerID = pose.SortingLayer;
+        replica.Name.renderer.sortingOrder = pose.SortingOrder + 1;
         var local = _source;
         if (local != null && local.spriteRenderer != null)
         {
@@ -116,9 +127,9 @@ internal sealed class RemotePlayers : IDisposable
 
         foreach (var replica in _replicas.Values)
         {
-            var destination = new Vector3(replica.Target.X, replica.Target.Y, replica.Target.Z);
-            replica.Root.transform.position = Vector3.Lerp(replica.Root.transform.position, destination,
-                Mathf.Clamp01(Time.deltaTime * 12f));
+            var pose = replica.Poses.Sample(Clock);
+            replica.Root.transform.position = new Vector3(pose.X, pose.Y, pose.Z);
+            ApplyVisuals(replica, pose);
 
             var bounds = replica.Renderer.bounds;
             replica.Name.transform.position = new Vector3(bounds.center.x, bounds.max.y + .2f, replica.Root.transform.position.z);
@@ -203,6 +214,7 @@ internal sealed class RemotePlayers : IDisposable
                 clone.sharedMaterial = nativeRenderer.sharedMaterial;
                 clone.sortingLayerID = nativeRenderer.sortingLayerID;
                 clone.sortingOrder = nativeRenderer.sortingOrder;
+                clone.spriteSortPoint = nativeRenderer.spriteSortPoint;
                 clone.color = nativeRenderer.color;
                 clone.flipX = nativeRenderer.flipX;
                 renderers.Add((nativeRenderer, clone));
@@ -214,6 +226,18 @@ internal sealed class RemotePlayers : IDisposable
                 return null;
             }
 
+            foreach (var nativeGroup in local.GetComponentsInChildren<SortingGroup>(true))
+            {
+                var visual = VisualTransform(nativeGroup.transform, local.transform, root.transform, paths);
+                if (visual == null) continue;
+                var group = visual.gameObject.AddComponent<SortingGroup>();
+                group.sortingLayerID = nativeGroup.sortingLayerID;
+                group.sortingOrder = nativeGroup.sortingOrder;
+                group.sortAtRoot = nativeGroup.sortAtRoot;
+                group.enabled = nativeGroup.enabled;
+                MelonLogger.Msg($"COOP_SORT_GROUP path={VisualPath(nativeGroup.transform, local.transform)} layer={group.sortingLayerID} order={group.sortingOrder}");
+            }
+            MelonLogger.Msg($"COOP_SORT_SPRITE point={renderer.spriteSortPoint} layer={renderer.sortingLayerID} order={renderer.sortingOrder}");
             var resolvers = new List<(SpriteResolver Source, SpriteResolver Clone)>();
             foreach (var nativeResolver in local.GetComponentsInChildren<SpriteResolver>(true))
             {

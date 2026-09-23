@@ -62,6 +62,9 @@ internal sealed class WireMessage
     public float X { get; set; }
     public float Y { get; set; }
     public float Z { get; set; }
+    public double PoseTime { get; set; }
+    public int SortingLayer { get; set; }
+    public int SortingOrder { get; set; }
     public bool FacingRight { get; set; }
     public bool Moving { get; set; }
     public int CostumeId { get; set; }

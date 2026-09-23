@@ -15,7 +15,7 @@ internal sealed class LobbyReassembly
 
     internal IEnumerable<(ulong Sender, byte[] Payload)> Accept(ulong sender, LobbyPacket packet, DateTime now)
     {
-        if (sender == 0 || packet.Sequence == 0)
+        if (sender == 0 || packet.Sequence == 0 || packet.Transient)
             yield break;
 
         if (!_receivers.TryGetValue(sender, out var receiver))

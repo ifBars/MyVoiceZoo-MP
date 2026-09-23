@@ -12,7 +12,7 @@ The Steam lobby owner owns the zoo and its persistence. Commands carry unique re
 
 The host samples zoo state once per second and sends a revisioned full snapshot when it changes. Guests validate animal IDs, counts, positions, names, and gold before applying snapshots. Guests retain their last authoritative state for rollback after rejected speculative edits. Active local editing and dragging are excluded from ordinary snapshot overwrite.
 
-Snapshots reference recordings by SHA-256 of their format and PCM16 samples. Missing clips are requested one at a time. Audio dimensions, digest, message sizes, queue budgets, and reassembly lifetime are bounded. Player poses are independent of zoo transactions and are rendered by inert visual replicas.
+Snapshots reference recordings by SHA-256 of their format and PCM16 samples. Missing clips are requested one at a time. Audio dimensions, digest, message sizes, queue budgets, and reassembly lifetime are bounded. Player poses use a separate sequenced, unreliable-no-delay channel at 20 Hz, with only the newest unsent pose retained per peer. They do not share reliable reassembly or sequence gaps with zoo/audio messages. Replicas play a 150 ms history of timestamped positions, hold the last position on loss, and snap on teleport or long gaps. They preserve native sprite sort points and sorting groups and never simulate remote physics. Protocol 4 rejects previous builds.
 
 ## Persistence
 

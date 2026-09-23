@@ -14,6 +14,7 @@ internal sealed class SmokeScenario
     private readonly bool _enabled;
     private readonly bool _host;
     private readonly bool _verifySave;
+    private readonly bool _microphone;
     private DateTime _next, _started = DateTime.UtcNow;
     private int _step, _animal = -1, _camp = -1, _costume = -1;
     private bool _failed;
@@ -26,6 +27,7 @@ internal sealed class SmokeScenario
         _enabled = Environment.GetCommandLineArgs().Contains("--mvzmp-smoke=shared-zoo") && MvzMp.Game.SaveIsolation.IsIsolated;
         _verifySave = Environment.GetCommandLineArgs().Contains("--mvzmp-smoke=verify-save") && MvzMp.Game.SaveIsolation.IsIsolated;
         _enabled |= _verifySave;
+        _microphone = _enabled && Environment.GetCommandLineArgs().Contains("--mvzmp-smoke-microphone");
         _host = Environment.GetCommandLineArgs().Contains("--mvzmp-host");
         if (_enabled && _host) lobby.MessageReceived += (peer, bytes) =>
         {
@@ -42,6 +44,22 @@ internal sealed class SmokeScenario
     private static void CaptureScreenshot()
     {
         if (!Environment.GetCommandLineArgs().Contains("-nographics")) ScreenCapture.CaptureScreenshot(Path.Combine(Path.GetDirectoryName(SaveLoadSystem._path)!, Environment.GetCommandLineArgs().Contains("--mvzmp-host") ? $"coop-{DateTime.UtcNow:HHmmssfff}.png" : "coop.png"));
+    }
+    private void VerifyRecording(string hash, string phase)
+    {
+        var voice = _runtime.Voices.Get(hash) ?? throw new Exception($"{phase}: recording data missing.");
+        var (peak, rms) = Game.VoiceStore.Levels(voice);
+        if (_microphone ? peak < .0001 || rms <= 0 : voice.Samples != 240000 || voice.Frequency != 48000 || voice.Channels != 1 || peak < .19 || peak > .21 || rms < .13 || rms > .15)
+            throw new Exception($"{phase}: test tone changed or became silent (peak={peak}, rms={rms}).");
+        var clip = _runtime.Voices.Clip(hash) ?? throw new Exception($"{phase}: playback clip missing.");
+        var samples = new Il2CppStructArray<float>(clip.samples * clip.channels);
+        if (!clip.GetData(samples, 0)) throw new Exception($"{phase}: playback clip unreadable.");
+        double clipSquares = 0;
+        foreach (var sample in samples) clipSquares += sample * sample;
+        var clipRms = Math.Sqrt(clipSquares / samples.Length);
+        if (!double.IsFinite(clipRms) || (_microphone ? clipRms <= 0 : clipRms < .13 || clipRms > .15))
+            throw new Exception($"{phase}: playback clip became silent or changed (rms={clipRms}).");
+        MelonLogger.Msg(FormattableString.Invariant($"PASS|guest-audio|phase={phase} peak={peak:F6} rms={rms:F6} hash={hash}"));
     }
     public void Tick()
     {
@@ -61,8 +79,9 @@ internal sealed class SmokeScenario
                 var savedAnimal = loaded.Animals.FirstOrDefault(a => a.Name == Name && a.Collected);
                 if (savedAnimal == null || savedAnimal.Voice.Length != 64 || !loaded.WindIsland || loaded.Camps.Length == 0 || Math.Abs(savedAnimal.X - 1.25f) > .01f) throw new Exception("Saved shared zoo did not reload completely.");
                 var clip = _runtime.Zoo.Animal(savedAnimal.Id)!.Voice;
-                if (clip == null || clip.samples != 240000 || clip.frequency != 48000) throw new Exception("Saved recording dimensions differ.");
-                MelonLogger.Msg($"PASS|verify-save|native save and 5 second WAV reloaded animal={savedAnimal.Id}"); _step = 99; return;
+                if (clip == null || (!_microphone && (clip.samples != 240000 || clip.frequency != 48000))) throw new Exception("Saved recording dimensions differ.");
+                VerifyRecording(savedAnimal.Voice, "native-save-reload");
+                MelonLogger.Msg($"PASS|verify-save|native save and recording WAV reloaded animal={savedAnimal.Id}"); _step = 99; return;
             }
             if (_host)
             {
@@ -80,6 +99,7 @@ internal sealed class SmokeScenario
                 var adopted = state.Animals.FirstOrDefault(a => a.Name == Name && a.Collected && a.Voice.Length == 64);
                 if (adopted != null && Math.Abs(adopted.X - 1.25f) < .01f && state.WindIsland && state.Camps.Length > 0)
                 {
+                    VerifyRecording(adopted.Voice, "host-received-guest");
                     CaptureScreenshot();
                     MelonLogger.Msg($"PASS|shared-zoo|host animal={adopted.Id} voice={adopted.Voice} position={adopted.X} camp={string.Join(',', state.Camps)} save={SaveLoadSystem._path}");
                     _step = 99;
@@ -110,13 +130,36 @@ internal sealed class SmokeScenario
                 var view = GameManager.Instance._uiManager._adoptView;
                 if (view._animal == null) return; // The native adoption reveal opens the editor after its animation.
                 view.OnNameInputValueChanged(Name);
+                if (_microphone)
+                {
+                    view.OnClickRecordStartButton();
+                    if (!view._voiceRecorder._isRecording || view._voiceRecorder._recordedClip == null)
+                        throw new Exception("Guest microphone did not start; check the selected input and permissions.");
+                    _next = DateTime.UtcNow.AddSeconds(2); _step = 11;
+                    MelonLogger.Msg("SMOKE guest hardware microphone capturing for two seconds; speak into the selected input now");
+                    return;
+                }
                 var clip = AudioClip.Create("co-op smoke recording", 240000, 1, 48000, false);
                 var samples = new Il2CppStructArray<float>(240000);
                 for (var i = 0; i < samples.Length; i++) samples[i] = (float)Math.Sin(i * Math.PI * 2 * 440 / 48000) * .2f;
                 clip.SetData(samples, 0);
                 view.OnRecordingEnd(clip);
                 view.OnClickCompleteButton(); _step = 2;
-                MelonLogger.Msg("SMOKE client native recording complete");
+                MelonLogger.Msg("SMOKE client synthetic clip submitted through native recording completion; microphone capture is not exercised");
+            }
+            else if (_step == 11)
+            {
+                var view = GameManager.Instance._uiManager._adoptView;
+                var recorder = view._voiceRecorder;
+                var position = Microphone.GetPosition(recorder._deviceName);
+                if (position <= 0) throw new Exception("Guest microphone sample position did not advance.");
+                MelonLogger.Msg($"SMOKE guest microphone sample clock advanced position={position}");
+                recorder.EndRecording();
+                if (view._animal?.Voice == null) throw new Exception("Guest microphone produced no completed clip.");
+                var hash = _runtime.Voices.Capture(view._animal.Voice);
+                VerifyRecording(hash, "guest-hardware-capture");
+                view.OnClickCompleteButton(); _step = 2;
+                MelonLogger.Msg($"PASS|guest-microphone-capture|position={position}; non-silent clip completed through native recorder");
             }
             else if (_step == 2)
             {
@@ -139,6 +182,7 @@ internal sealed class SmokeScenario
                 var animal = state.Animals.First(a => a.Id == _animal);
                 if (!state.WindIsland || !state.Camps.Contains(_camp) || animal.Name != Name || animal.Voice.Length != 64 || Math.Abs(animal.X - 1.25f) > .01f) return;
                 MelonLogger.Msg($"SMOKE client converged animal={_animal} voice={animal.Voice}");
+                VerifyRecording(animal.Voice, "guest-after-commit");
                 if (_soloFileHash != null && _soloFileHash != Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(SaveLoadSystem._path)))) throw new Exception("Guest save changed during co-op.");
                 _costume = (int)Enum.GetValues<CostumeID>().First(c => !CostumeManager.Instance.IsBuyCostume(c) && CostumeManager.Instance.CanBuyCostumeCondition(c));
                 _runtime.Purchase("costume", _costume); _step = 50;
@@ -163,6 +207,11 @@ internal sealed class SmokeScenario
             }
             else if (_step == 51)
             {
+                if (!MovementProbe.Completed) return;
+                _step = 54;
+            }
+            else if (_step == 54)
+            {
                 _lobby.Leave(); _step = 6;
             }
             else if (_step == 6)
@@ -174,6 +223,7 @@ internal sealed class SmokeScenario
             else if (_step == 7)
             {
                 if (!_runtime.Synchronized || _runtime.Zoo.Animal(_animal)!.Name != Name) return;
+                VerifyRecording(_runtime.Voices.Capture(_runtime.Zoo.Animal(_animal)!.Voice), "guest-redownload");
                 _lobby.Send(_lobby.HostSteamId, System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(new WireMessage { Kind = "smoke-end" })); _step = 8;
             }
             else if (_step == 8)

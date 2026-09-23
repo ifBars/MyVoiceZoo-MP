@@ -26,6 +26,12 @@ For an in-mod scenario that emits `PASS|<scenario>|...` on **both** peers, run:
 
 The shared-zoo scenario adopts and names an animal, records a synthetic clip through the native editor, moves the animal, buys an area, camp, and costume, edits the adopted animal, checks the guest save hash, leaves, rejoins with an empty recording cache, then verifies solo restoration after host departure. Add `-Rendered` to exercise graphics and write `coop.png` for the client and timestamped `coop-*.png` frames for the host under their data directories. Add `-LobbyChat` only to force the diagnostic fallback transport. The scenario marker is checked after lobby and initial synchronization. Any `FAIL|...` line or process exit should be investigated in the retained per-peer logs. The mod owns scenario actions and assertions; this script owns build, isolated installs, process lifetime, log collection, and user-data preservation.
 
+## Physical guest microphone
+
+The runner also forwards `-Motion` and `-Settings` to both peers as `--mvzmp-smoke-motion` and `--mvzmp-smoke-settings` for the corresponding in-mod probes. Use `-Rendered` when inspecting their screenshots. The selected probe flags are retained in `result.json`.
+
+Add `-Microphone` to `-Scenario shared-zoo` to use the native guest microphone for two seconds instead of the synthetic tone. This explicitly records a short clip into disposable test data. Both peers receive the microphone-mode flag. The guest must have an available input; speak during capture to test non-silent content. An advancing sample clock proves the device is capturing, while a silent clip still fails the audio-content test. A failure due to silence is not evidence of network audio loss. See [recording diagnostics](recording-diagnostics.md) for the per-stage log markers and manual playback check.
+
 ## Package
 
 ```powershell

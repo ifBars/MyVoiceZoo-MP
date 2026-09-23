@@ -9,16 +9,18 @@ internal static class LobbyPackets
     internal const int ChunkPayload = 3800;
     internal const int NativeChunkPayload = 64 * 1024;
     internal const int HeaderSize = 46;
+    internal const int MaxTransientPayload = 1200;
     internal const int MaxPacket = HeaderSize + ChunkPayload;
-    private const uint Magic = 0x33505A4D; // MZP3
-    private const byte Version = 3;
+    private const uint Magic = 0x34505A4D; // MZP4
+    private const byte Version = 4;
 
     internal static byte[] Encode(uint sequence, ulong recipient, ulong senderEpoch, ulong recipientEpoch, int total, int offset,
-        ReadOnlySpan<byte> chunk, int chunkSize = ChunkPayload)
+        ReadOnlySpan<byte> chunk, int chunkSize = ChunkPayload, bool transient = false)
     {
         if (chunkSize != ChunkPayload && chunkSize != NativeChunkPayload)
             throw new ArgumentOutOfRangeException(nameof(chunkSize));
-        if (sequence == 0 || recipient == 0 || senderEpoch == 0 || recipientEpoch == 0 ||
+        if ((transient && (total > MaxTransientPayload || offset != 0 || chunk.Length != total)) ||
+            sequence == 0 || recipient == 0 || senderEpoch == 0 || recipientEpoch == 0 ||
             total < 0 || total > MaxPayload ||
             offset < 0 || offset > total || chunk.Length > chunkSize ||
             (total == 0 ? offset != 0 || chunk.Length != 0 :
@@ -28,6 +30,7 @@ internal static class LobbyPackets
         var packet = new byte[HeaderSize + chunk.Length];
         BinaryPrimitives.WriteUInt32LittleEndian(packet, Magic);
         packet[4] = Version;
+        packet[5] = transient ? (byte)1 : (byte)0;
         BinaryPrimitives.WriteUInt32LittleEndian(packet.AsSpan(6), sequence);
         BinaryPrimitives.WriteUInt64LittleEndian(packet.AsSpan(10), recipient);
         BinaryPrimitives.WriteUInt64LittleEndian(packet.AsSpan(18), senderEpoch);
@@ -44,9 +47,10 @@ internal static class LobbyPackets
         decoded = default;
         if ((chunkSize != ChunkPayload && chunkSize != NativeChunkPayload) ||
             packet.Length < HeaderSize || packet.Length > HeaderSize + chunkSize ||
-            BinaryPrimitives.ReadUInt32LittleEndian(packet) != Magic || packet[4] != Version || packet[5] != 0)
+            BinaryPrimitives.ReadUInt32LittleEndian(packet) != Magic || packet[4] != Version || packet[5] > 1)
             return false;
 
+        var transient = packet[5] == 1;
         var sequence = BinaryPrimitives.ReadUInt32LittleEndian(packet.Slice(6));
         var recipient = BinaryPrimitives.ReadUInt64LittleEndian(packet.Slice(10));
         var senderEpoch = BinaryPrimitives.ReadUInt64LittleEndian(packet.Slice(18));
@@ -57,11 +61,12 @@ internal static class LobbyPackets
         if (sequence == 0 || recipient == 0 || senderEpoch == 0 || recipientEpoch == 0 ||
             total < 0 || total > MaxPayload ||
             offset < 0 || offset > total || length != packet.Length - HeaderSize ||
+            (transient && (total > MaxTransientPayload || offset != 0 || length != total)) ||
             (total == 0 ? offset != 0 || length != 0 :
                 offset % chunkSize != 0 || length != Math.Min(chunkSize, total - offset)))
             return false;
 
-        decoded = new LobbyPacket(sequence, recipient, senderEpoch, recipientEpoch, total, offset, packet.Slice(HeaderSize).ToArray());
+        decoded = new LobbyPacket(sequence, recipient, senderEpoch, recipientEpoch, total, offset, packet.Slice(HeaderSize).ToArray(), transient);
         return true;
     }
 
@@ -70,4 +75,4 @@ internal static class LobbyPackets
 }
 
 internal readonly record struct LobbyPacket(uint Sequence, ulong Recipient, ulong SenderEpoch, ulong RecipientEpoch,
-    int Total, int Offset, byte[] Chunk);
+    int Total, int Offset, byte[] Chunk, bool Transient = false);

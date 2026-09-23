@@ -10,10 +10,15 @@ param(
     [switch]$SkipBuild,
     [switch]$Rendered,
     [switch]$LobbyChat,
+    [switch]$Microphone,
+    [switch]$Motion,
+    [switch]$Settings,
     [switch]$PlanOnly
 )
 
 $ErrorActionPreference = 'Stop'
+if (($Microphone -or $Motion) -and $Scenario -ne 'shared-zoo') { throw '-Microphone and -Motion require -Scenario shared-zoo.' }
+if ($Settings -and -not $Rendered) { throw '-Settings requires -Rendered for visual inspection.' }
 $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $game = [IO.Path]::GetFullPath($GameDirectory)
 $gse = [IO.Path]::GetFullPath($GseDll)
@@ -96,7 +101,7 @@ $existing = @(Get-CimInstance Win32_Process -Filter "Name = 'MyVoiceZoo.exe'")
 if ($existing.Count -gt 0) { throw "MyVoiceZoo is already running (PID $($existing.ProcessId -join ', ')). Close it before testing." }
 if (Test-Path -LiteralPath (Join-Path $game 'MyVoiceZoo_Data\Plugins\x86_64\steam_settings')) { throw 'Source game already contains steam_settings; cannot create clean GSE identities.' }
 if ($PlanOnly) {
-    Write-Output "PLAN|game=$game|gse=$actualHash|testRoot=$root|host=$HostSteamId|client=$ClientSteamId|scenario=$Scenario"
+    Write-Output "PLAN|game=$game|gse=$actualHash|testRoot=$root|host=$HostSteamId|client=$ClientSteamId|scenario=$Scenario|microphone=$Microphone|motion=$Motion|settings=$Settings"
     return
 }
 
@@ -127,6 +132,9 @@ try {
     $clientArgs = @('-batchmode', '-nographics')
     if ($Rendered) { $hostArgs = @('--mvzmp-host', '-screen-fullscreen', '0', '-screen-width', '1280', '-screen-height', '720'); $clientArgs = @('-screen-fullscreen', '0', '-screen-width', '1280', '-screen-height', '720') }
     if ($LobbyChat) { $hostArgs += '--mvzmp-lobby-chat'; $clientArgs += '--mvzmp-lobby-chat' }
+    if ($Microphone) { $hostArgs += '--mvzmp-smoke-microphone'; $clientArgs += '--mvzmp-smoke-microphone' }
+    if ($Motion) { $hostArgs += '--mvzmp-smoke-motion'; $clientArgs += '--mvzmp-smoke-motion' }
+    if ($Settings) { $hostArgs += '--mvzmp-smoke-settings'; $clientArgs += '--mvzmp-smoke-settings' }
     if ($Scenario) {
         $hostArgs += "--mvzmp-smoke=$Scenario"
         $clientArgs += "--mvzmp-smoke=$Scenario"
@@ -161,6 +169,12 @@ try {
         Wait-Log $hostLog "PASS\|$([regex]::Escape($Scenario))\|" 'host-scenario' @($hostProcess, $clientProcess) | Out-Null
         Wait-Log $clientLog "PASS\|$([regex]::Escape($Scenario))\|" 'client-scenario' @($hostProcess, $clientProcess) | Out-Null
     }
+    if ($Motion) { Wait-Log $hostLog 'PASS\|native-motion\|' 'native-motion' @($hostProcess, $clientProcess) | Out-Null }
+    if ($Microphone) { Wait-Log $clientLog 'PASS\|guest-microphone-capture\|' 'guest-microphone' @($hostProcess, $clientProcess) | Out-Null }
+    if ($Settings) {
+        Wait-Log $hostLog 'PASS\|settings-hidden\|' 'host-settings' @($hostProcess, $clientProcess) | Out-Null
+        Wait-Log $clientLog 'PASS\|settings-hidden\|' 'client-settings' @($hostProcess, $clientProcess) | Out-Null
+    }
     $result = 'PASS'
     Write-Output "PASS|gse-coop|lobby=$lobbyId|run=$run"
 } catch {
@@ -186,16 +200,8 @@ try {
     [pscustomobject]@{
         Result = $result; Run = $run; HostSteamId = $HostSteamId; ClientSteamId = $ClientSteamId
         GseSha256 = $actualHash; Scenario = $Scenario; SaveRestored = $saveIsGuarded
+        Microphone = [bool]$Microphone; Motion = [bool]$Motion; Settings = [bool]$Settings
         Evidence = $evidence; TimeUtc = [DateTime]::UtcNow.ToString('o')
     } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $evidence 'result.json')
     Write-Output "Evidence retained: $evidence"
 }
-
-
-
-
-
-
-
-
-

@@ -87,3 +87,36 @@ for (uint sequence = 2; sequence <= LobbyReassembly.MaxPendingMessages + 2; sequ
 Check(boundedCount.PendingMessages == LobbyReassembly.MaxPendingMessages, "Pending message count exceeded limit.");
 
 Console.WriteLine("Transport framing, ordering, expiry, and limits passed.");
+var poses = new LatestPoseLane();
+poses.Queue(22, 111, 222, new byte[] { 1 });
+poses.Queue(22, 111, 222, new byte[] { 2 });
+Check(poses.PendingCount == 1, "Superseded pose remained queued.");
+var poseWire = poses.Drain().Single().Bytes;
+Check(poses.PendingCount == 0 && LobbyPackets.TryDecode(poseWire, out _), "Pose drain failed.");
+LobbyPackets.TryDecode(poseWire, out var posePacket);
+Check(posePacket.Transient && posePacket.Sequence == 2 && posePacket.Chunk[0] == 2, "Latest pose did not supersede prior pose.");
+Check(poses.Accept(11, posePacket), "Missing pose sequence stalled delivery.");
+Check(!poses.Accept(11, posePacket), "Duplicate pose delivered.");
+Check(!poses.Accept(11, posePacket with { Sequence = 1 }), "Old pose delivered.");
+Check(!poses.Accept(11, second), "Reliable packet accepted in pose lane.");
+Check(!new LobbyReassembly().Accept(11, posePacket, now).Any(), "Pose entered ordered reliable lane.");
+Check(poses.Accept(11, posePacket with { Sequence = 5 }), "Lost pose blocked latest pose.");
+poses.RemovePeer(11);
+Check(poses.Accept(11, posePacket with { Sequence = uint.MaxValue }), "Fresh peer rejected first sequence.");
+Check(poses.Accept(11, posePacket with { Sequence = 1 }), "Pose sequence wrap failed.");
+Check(!poses.Accept(11, posePacket with { Sequence = uint.MaxValue }), "Pre-wrap stale pose accepted.");
+Check(LobbyPackets.MatchesSession(posePacket, 22, 111, 222) &&
+    !LobbyPackets.MatchesSession(posePacket, 22, 111, 223), "Pose join epoch isolation failed.");
+try
+{
+    poses.Queue(22, 111, 222, new byte[LobbyPackets.MaxTransientPayload + 1]);
+    throw new Exception("Oversized transient message accepted.");
+}
+catch (ArgumentOutOfRangeException) { }
+var independent = new LobbyReassembly();
+Check(independent.Accept(11, Packets(1, new byte[] { 1 }).Single(), now).Count() == 1 &&
+    independent.Accept(11, Packets(2, new byte[] { 2 }).Single(), now).Count() == 1,
+    "Reliable sequence acquired a gap from transient traffic.");
+poses.Clear();
+Check(poses.Accept(11, posePacket with { Sequence = 1 }), "Session clear retained stale sequence.");
+Console.WriteLine("Latest-only pose replacement, loss/reorder/duplicate rejection, wrap, epochs, and reliable lane isolation passed.");

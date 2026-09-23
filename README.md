@@ -6,7 +6,7 @@ A Steam co-op mod for MyVoiceZoo. Up to four friends share the host's zoo using 
 
 1. Install **MelonLoader 0.7.3 x64** into MyVoiceZoo and run the game once.
 2. Put `MVZ.MP.dll` in the game's `Mods` folder. Every player needs the same game and mod build.
-3. Load your zoo and choose **Host** in the co-op panel, then **Invite** to open Steam's invite dialog.
+3. Load your zoo and open the native settings menu and choose **Host** in its co-op section, then **Invite** to open Steam's invite dialog.
 4. Friends accept the Steam invite. Their zoo is temporarily replaced by the host's shared zoo for the session.
 5. Choose **Leave** to return to your own zoo. The host retains shared progress.
 

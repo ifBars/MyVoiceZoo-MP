@@ -1,4 +1,4 @@
-# MVZ-MP 0.2.0
+# MVZ-MP 0.2.1
 
 Steam co-op for MyVoiceZoo. Up to four players share the host's animals, recordings, placement, gold, areas, camps, and purchased costumes.
 
@@ -8,7 +8,7 @@ Install MelonLoader 0.7.3 x64 for MyVoiceZoo and launch once. Put the included M
 
 ## Play
 
-Choose Host in the co-op panel, then Invite to use Steam's invite dialog. Friends join by accepting the invite. F6 hosts, F7 invites, and F8 leaves.
+Open the game's settings menu and choose Host in its co-op section, then Invite to use Steam's invite dialog. Friends join by accepting the invite. F6 hosts, F7 invites, and F8 leaves.
 
 Use the normal game interfaces to adopt or edit animals, record their voices, buy upgrades, and move them. The host approves shared purchases. An animal is reserved while another player edits it. Each player moves independently and can equip a different costume.
 
@@ -20,4 +20,6 @@ Built for MyVoiceZoo's Unity 2022.3.62f2 IL2CPP build with MelonLoader 0.7.3. Th
 
 This package contains no game assemblies, generated wrappers, saves, recordings, or Steam emulator files. Remove Mods/MVZ.MP.dll to uninstall the mod.
 
-Validated with two isolated GSE game processes, including rendered player/nameplate checks, shared purchases/recordings, reconnect, host departure, and guest save preservation. Real two-account Steam overlay invite acceptance and WAN/four-player testing remain unverified.
+Validated with two isolated GSE game processes, including rendered player/nameplate checks, shared purchases/recordings, reconnect, host departure, and guest save preservation. The user has also reported a successful two-account playtest of 0.2.0, with movement/depth issues addressed in this update. The new build still needs a repeat real-account playtest; four-player and long-session testing remain unverified.
+
+Version 0.2.1 uses protocol 4. Both players must update together. Movement uses a separate latest-pose channel and buffered playback; native sprite pivot sorting is preserved. Microphone diagnostics distinguish capture silence from transfer failure.

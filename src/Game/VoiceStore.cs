@@ -52,6 +52,19 @@ internal sealed class VoiceStore : IDisposable
         if (_bytes + data.Pcm.Length > 128 * 1024 * 1024) throw new InvalidDataException("Session recording cache is full.");
         _data.Add(data.Hash, data);
         _bytes += data.Pcm.Length;
+        var (peak, rms) = Levels(data);
+        MelonLoader.MelonLogger.Msg(FormattableString.Invariant($"COOP VOICE_CACHED hash={data.Hash} samples={data.Samples} hz={data.Frequency} channels={data.Channels} peak={peak:F6} rms={rms:F6}"));
+    }
+
+    internal static (double Peak, double Rms) Levels(VoiceData data)
+    {
+        double peak = 0, squares = 0;
+        for (var i = 0; i + 1 < data.Pcm.Length; i += 2)
+        {
+            var sample = (short)(data.Pcm[i] | data.Pcm[i + 1] << 8) / 32768d;
+            peak = Math.Max(peak, Math.Abs(sample)); squares += sample * sample;
+        }
+        return (peak, data.Pcm.Length == 0 ? 0 : Math.Sqrt(squares / (data.Pcm.Length / 2)));
     }
 
     public AudioClip? Clip(string hash)

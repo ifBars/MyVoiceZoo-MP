@@ -82,10 +82,10 @@ internal sealed class CoopRuntime : IDisposable
             var pose = _players.TickLocalPose();
             if (pose is { } p)
             {
-                var message = new WireMessage { Kind = "pose", X = p.X, Y = p.Y, Z = p.Z, FacingRight = p.FacingRight, Moving = p.Moving, CostumeId = p.CostumeId };
+                var message = new WireMessage { Kind = "pose", X = p.X, Y = p.Y, Z = p.Z, FacingRight = p.FacingRight, Moving = p.Moving, CostumeId = p.CostumeId, PoseTime = p.Time, SortingLayer = p.SortingLayer, SortingOrder = p.SortingOrder };
                 _lobby.Broadcast(JsonSerializer.SerializeToUtf8Bytes(message), false);
             }
-            _nextPose = now.AddMilliseconds(100);
+            _nextPose = now.AddMilliseconds(50);
         }
         _players.Tick();
     }
@@ -144,7 +144,7 @@ internal sealed class CoopRuntime : IDisposable
             if (m.Kind == "pose")
             {
                 if (!Zoo.Ready || !ZooAdapter.ValidPosition(m.X, m.Y, m.Z) || !Enum.IsDefined(typeof(CostumeID), m.CostumeId)) return;
-                _players.Apply(sender, _lobby.PeerName(sender), new PlayerPose(m.X, m.Y, m.Z, m.FacingRight, m.Moving, m.CostumeId));
+                _players.Apply(sender, _lobby.PeerName(sender), new PlayerPose(m.X, m.Y, m.Z, m.FacingRight, m.Moving, m.CostumeId, m.PoseTime, m.SortingLayer, m.SortingOrder));
                 return;
             }
             if (_lobby.IsHost)

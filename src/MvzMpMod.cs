@@ -3,7 +3,7 @@ using MvzMp.Game;
 using MvzMp.Presentation;
 using UnityEngine;
 
-[assembly: MelonInfo(typeof(MvzMp.MvzMpMod), "MVZ-MP", "0.2.0", "Bars")]
+[assembly: MelonInfo(typeof(MvzMp.MvzMpMod), "MVZ-MP", "0.2.1", "Bars")]
 [assembly: MelonGame("DefaultCompany", "MyVoiceZoo")]
 
 namespace MvzMp;
@@ -37,6 +37,7 @@ public sealed class MvzMpMod : MelonMod
             _lobby.Tick();
             _runtime!.Tick();
             _smoke!.Tick();
+            MvzMp.Diagnostics.MovementProbe.Tick(_lobby);
             _panel!.Tick();
             if (!_lobby.IsReady) return;
             if (Input.GetKeyDown(KeyCode.F6)) _lobby.Host();

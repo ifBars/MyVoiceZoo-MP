@@ -8,7 +8,7 @@ using UnityEngine.UI;
 
 namespace MvzMp.Presentation;
 
-/// <summary>Scene-safe co-op controls styled from the game's settings button.</summary>
+/// <summary>Co-op controls inside the native settings window.</summary>
 internal sealed class CoopPanel : IDisposable
 {
     private readonly Func<string> _status;
@@ -17,13 +17,101 @@ internal sealed class CoopPanel : IDisposable
     private readonly Action _invite;
     private readonly Action _leave;
     private GameObject? _root;
-    private Canvas? _canvas;
+    private SettingView? _settings;
+    private RectTransform? _popup;
+    private Vector2 _popupOriginalSize;
+    private RectTransform? _frame;
+    private Vector2 _frameOriginalSize;
+    private readonly List<(RectTransform Rect, Vector2 Position)> _shifted = new();
     private TextMeshProUGUI? _statusText;
     private Button? _hostButton;
     private Button? _inviteButton;
     private Button? _leaveButton;
     private readonly List<UnityAction> _listeners = new();
     private bool _disposed;
+    private readonly bool _probeSettings = Environment.GetCommandLineArgs().Contains("--mvzmp-smoke-settings");
+    private int _settingsProbePhase;
+    private float _settingsProbeAt;
+    private bool _settingsProbeInitiallyConnected;
+
+    private void ProbeSettings()
+    {
+        if (!_probeSettings || !MvzMp.Game.SaveIsolation.IsIsolated) return;
+        var settings = GameManager.Instance?._uiManager?._settingView;
+        if (settings == null || GameManager.Instance?._loadCompleted != true) return;
+        if (_settingsProbePhase == 0)
+        {
+            _settingsProbeAt = Time.realtimeSinceStartup + 8f;
+            _settingsProbePhase = 1;
+        }
+        if (_settingsProbePhase == 1 && Time.realtimeSinceStartup >= _settingsProbeAt)
+        {
+            _settingsProbeInitiallyConnected = _connected();
+            settings.Show();
+            _settingsProbeAt = Time.realtimeSinceStartup + 2f;
+            _settingsProbePhase = 2;
+        }
+        if (_settingsProbePhase == 3 && Time.realtimeSinceStartup >= _settingsProbeAt)
+        {
+            if (_settingsProbeInitiallyConnected || _connected())
+            {
+                FinishSettingsProbe(settings);
+            }
+            else if (_hostButton != null)
+            {
+                _hostButton.onClick.Invoke();
+                _settingsProbeAt = Time.realtimeSinceStartup + 15f;
+                _settingsProbePhase = 4;
+            }
+            else FailSettingsProbe(settings, "Host button unavailable");
+        }
+        if (_settingsProbePhase == 4)
+        {
+            if (_connected() && _leaveButton != null)
+            {
+                _leaveButton.onClick.Invoke();
+                _settingsProbeAt = Time.realtimeSinceStartup + 15f;
+                _settingsProbePhase = 5;
+            }
+            else if (Time.realtimeSinceStartup >= _settingsProbeAt) FailSettingsProbe(settings, "Host button did not create lobby");
+        }
+        if (_settingsProbePhase == 5)
+        {
+            if (!_connected())
+            {
+                MelonLoader.MelonLogger.Msg("PASS|settings-actions|Native settings Host and Leave callbacks completed");
+                FinishSettingsProbe(settings);
+            }
+            else if (Time.realtimeSinceStartup >= _settingsProbeAt) FailSettingsProbe(settings, "Leave button did not exit lobby");
+        }
+        if (_settingsProbePhase != 2 || Time.realtimeSinceStartup < _settingsProbeAt) return;
+        foreach (var rect in settings.GetComponentsInChildren<RectTransform>(true))
+        {
+            var path = rect.name;
+            for (var parent = rect.parent; parent != null && parent != settings.transform; parent = parent.parent) path = parent.name + "/" + path;
+            MelonLoader.MelonLogger.Msg($"SETTINGS RECT {path} pos={rect.anchoredPosition} size={rect.rect.size} pivot={rect.pivot} active={rect.gameObject.activeSelf}");
+        }
+        var arg = Environment.GetCommandLineArgs().First(value => value.StartsWith("--mvzmp-data-dir=", StringComparison.Ordinal));
+        ScreenCapture.CaptureScreenshot(Path.Combine(arg["--mvzmp-data-dir=".Length..].Trim('"'), "settings.png"));
+        MelonLoader.MelonLogger.Msg("SETTINGS SCREENSHOT Native settings opened and screenshot requested");
+        _settingsProbePhase = 3;
+        _settingsProbeAt = Time.realtimeSinceStartup + 1f;
+    }
+
+    private void FinishSettingsProbe(SettingView settings)
+    {
+        settings.Hide();
+        _settingsProbePhase = 6;
+        MelonLoader.MelonLogger.Msg(_root == null || !_root.activeInHierarchy
+            ? "PASS|settings-hidden|Co-op controls hidden with native settings"
+            : "FAIL|settings-hidden|Co-op controls remain visible");
+    }
+
+    private void FailSettingsProbe(SettingView settings, string reason)
+    {
+        MelonLoader.MelonLogger.Msg($"FAIL|settings-actions|{reason}");
+        FinishSettingsProbe(settings);
+    }
 
     public CoopPanel(Func<string> status, Func<bool> connected, Action host, Action invite, Action leave)
     {
@@ -37,17 +125,19 @@ internal sealed class CoopPanel : IDisposable
     public void Tick()
     {
         if (_disposed) return;
-        var nativeButton = GameManager.Instance?._uiManager?._settingButton;
-        var canvas = nativeButton == null ? null : nativeButton.GetComponentInParent<Canvas>();
-        if (canvas == null)
+        ProbeSettings();
+        var settings = GameManager.Instance?._uiManager?._settingView;
+        if (settings == null)
         {
             DestroyPanel();
             return;
         }
-        if (_root == null || _canvas != canvas)
+        // Create TMP only after the native window is active; IL2CPP TMP needs Awake first.
+        if (!settings.gameObject.activeInHierarchy) return;
+        if (_root == null || _settings != settings)
         {
             DestroyPanel();
-            CreatePanel(canvas, nativeButton!);
+            CreatePanel(settings);
         }
         if (_statusText != null) _statusText.text = _status();
         var connected = _connected();
@@ -65,47 +155,69 @@ internal sealed class CoopPanel : IDisposable
         DestroyPanel();
     }
 
-    private void CreatePanel(Canvas canvas, Button nativeButton)
+    private void CreatePanel(SettingView settings)
     {
-        var nativeText = nativeButton.GetComponentInChildren<TextMeshProUGUI>() ??
-            GameManager.Instance?._uiManager?.GetComponentInChildren<TextMeshProUGUI>(true);
-        _root = NewUiObject("MVZ-MP Co-op", canvas.transform);
-        _canvas = canvas;
-        var panel = _root.GetComponent<RectTransform>();
-        panel.anchorMin = Vector2.one;
-        panel.anchorMax = Vector2.one;
-        panel.pivot = Vector2.one;
-        panel.anchoredPosition = new Vector2(-18f, -18f);
-        panel.sizeDelta = new Vector2(280f, 124f);
-        var background = _root.AddComponent<Image>();
-        background.color = new Color(0.12f, 0.16f, 0.17f, 0.9f);
-        background.raycastTarget = false;
-
-        var title = MakeText("Title", _root.transform, nativeText, "CO-OP", 18f);
-        Position(title.rectTransform, new Vector2(0f, 36f), new Vector2(260f, 28f));
-        _statusText = MakeText("Status", _root.transform, nativeText, string.Empty, 13f);
-        Position(_statusText.rectTransform, new Vector2(0f, 4f), new Vector2(260f, 40f));
-        _hostButton = MakeButton("Host", -88f, nativeButton, nativeText, _host);
-        _inviteButton = MakeButton("Invite", 0f, nativeButton, nativeText, _invite);
-        _leaveButton = MakeButton("Leave", 88f, nativeButton, nativeText, _leave);
+        var popupTransform = settings.transform.Find("Contents/Popup");
+        var quit = popupTransform?.Find("QuitGameButton")?.GetComponent<Button>();
+        if (popupTransform == null || quit == null) return;
+        _settings = settings;
+        _popup = popupTransform.GetComponent<RectTransform>();
+        _popupOriginalSize = _popup.sizeDelta;
+        _popup.sizeDelta = new Vector2(_popupOriginalSize.x + 464f, _popupOriginalSize.y);
+        _frame = popupTransform.Find("Frame")?.GetComponent<RectTransform>();
+        if (_frame != null)
+        {
+            _frameOriginalSize = _frame.sizeDelta;
+            // Stretch-anchored frames follow the popup automatically.
+            if (_frame.anchorMin.x == _frame.anchorMax.x)
+                _frame.sizeDelta = new Vector2(_frameOriginalSize.x + 464f, _frameOriginalSize.y);
+        }
+        foreach (var name in new[] { "Audio", "Language", "Resolution", "MicGuideText", "QuitGameButton" })
+        {
+            var rect = popupTransform.Find(name)?.GetComponent<RectTransform>();
+            if (rect == null) continue;
+            _shifted.Add((rect, rect.anchoredPosition));
+            rect.anchoredPosition += new Vector2(-220f, 0f);
+        }
+        var nativeText = quit.GetComponentInChildren<TextMeshProUGUI>(true);
+        _root = NewUiObject("MVZ-MP Co-op", popupTransform);
+        Position(_root.GetComponent<RectTransform>(), new Vector2(280f, 0f), new Vector2(360f, 600f));
+        var headingText = popupTransform.Find("Audio/AudioTitleText")?.GetComponent<TextMeshProUGUI>() ?? nativeText;
+        var title = MakeText("Title", _root.transform, headingText, "Co-op", headingText?.fontSize ?? 32f);
+        Position(title.rectTransform, new Vector2(0f, 345f), new Vector2(350f, 60f));
+        _statusText = MakeText("Status", _root.transform, nativeText, string.Empty, 24f);
+        Position(_statusText.rectTransform, new Vector2(0f, 244f), new Vector2(340f, 112f));
+        _hostButton = MakeButton("Host zoo", 120f, quit, nativeText, _host);
+        _inviteButton = MakeButton("Invite friends", 26f, quit, nativeText, _invite);
+        _leaveButton = MakeButton("Leave co-op", -68f, quit, nativeText, _leave);
+        var note = MakeText("Help", _root.transform, nativeText, "Friends share the host's zoo.\nYour solo zoo returns when you leave.", 22f);
+        Position(note.rectTransform, new Vector2(0f, -190f), new Vector2(340f, 118f));
+        MelonLoader.MelonLogger.Msg("COOP SETTINGS Native settings controls installed");
     }
 
-    private Button MakeButton(string label, float x, Button template, TextMeshProUGUI? nativeText, Action callback)
+    private Button MakeButton(string label, float y, Button template, TextMeshProUGUI? nativeText, Action callback)
     {
         var obj = NewUiObject(label, _root!.transform);
-        Position(obj.GetComponent<RectTransform>(), new Vector2(x, -42f), new Vector2(82f, 29f));
+        Position(obj.GetComponent<RectTransform>(), new Vector2(0f, y), new Vector2(340f, 69f));
         var image = obj.AddComponent<Image>();
-        image.sprite = null;
-        image.type = Image.Type.Simple;
-        image.color = new Color(0.34f, 0.10f, 0.14f, 0.96f);
+        var templateImage = template.GetComponent<Image>();
+        image.sprite = templateImage?.sprite;
+        image.type = templateImage?.type ?? Image.Type.Simple;
+        image.color = templateImage?.color ?? Color.white;
         var button = obj.AddComponent<Button>();
         button.targetGraphic = image;
-        button.colors = template.colors;
-        button.transition = template.transition;
+        var colors = template.colors;
+        colors.normalColor = Color.white;
+        colors.highlightedColor = new Color(1f, 0.9f, 0.86f, 1f);
+        colors.pressedColor = new Color(0.8f, 0.7f, 0.65f, 1f);
+        colors.disabledColor = new Color(0.46f, 0.46f, 0.46f, 0.62f);
+        colors.colorMultiplier = 1f;
+        button.colors = colors;
+        button.transition = Selectable.Transition.ColorTint;
         var listener = DelegateSupport.ConvertDelegate<UnityAction>((Action)callback.Invoke)!;
         _listeners.Add(listener);
         button.onClick.AddListener(listener);
-        var text = MakeText("Label", obj.transform, nativeText, label, 14f);
+        var text = MakeText("Label", obj.transform, nativeText, label, 28f);
         text.rectTransform.anchorMin = Vector2.zero;
         text.rectTransform.anchorMax = Vector2.one;
         text.rectTransform.offsetMin = Vector2.zero;
@@ -121,6 +233,7 @@ internal sealed class CoopPanel : IDisposable
         if (template != null)
         {
             text.font = template.font;
+            text.fontSharedMaterial = template.fontSharedMaterial;
             text.color = template.color;
         }
         text.fontSize = size;
@@ -152,7 +265,14 @@ internal sealed class CoopPanel : IDisposable
     {
         if (_root != null) UnityEngine.Object.Destroy(_root);
         _root = null;
-        _canvas = null;
+        foreach (var (rect, position) in _shifted)
+            if (rect != null) rect.anchoredPosition = position;
+        _shifted.Clear();
+        if (_popup != null) _popup.sizeDelta = _popupOriginalSize;
+        if (_frame != null) _frame.sizeDelta = _frameOriginalSize;
+        _popup = null;
+        _frame = null;
+        _settings = null;
         _statusText = null;
         _hostButton = null;
         _inviteButton = null;

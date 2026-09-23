@@ -12,14 +12,15 @@ namespace MvzMp;
 
 internal sealed class SteamLobby : IDisposable
 {
-    private const string ProtocolVersion = "3";
-    private const string ModBuild = "0.2.0";
+    private const string ProtocolVersion = "4";
+    private const string ModBuild = "0.2.1";
     private const string ProtocolKey = "mvzmp_version";
     private const string BuildKey = "mvzmp_build";
     private const string GameKey = "mvzmp_game";
     private const string TransportKey = "mvzmp_transport";
     private const string EpochKey = "mvzmp_epoch";
     private const int NativeChannel = 27182;
+    private const int PoseChannel = 27183;
     private const int MaxQueuedBytes = 8 * 1024 * 1024;
     private const int PacketsPerTick = 4;
     private static readonly TimeSpan SendStallTimeout = TimeSpan.FromSeconds(30);
@@ -31,6 +32,10 @@ internal sealed class SteamLobby : IDisposable
     private CallResult<LobbyCreated_t>? _createResult;
     private LobbyReassembly _reassembly = new();
     private readonly Queue<QueuedPacket> _outgoing = new();
+    private readonly LatestPoseLane _poses = new();
+    private int _poseSendDiagnostics, _poseReceiveDiagnostics;
+    private bool _poseUnderLoadLogged;
+    private ulong _localSteamId;
     private readonly Dictionary<ulong, uint> _nextSequence = new();
     private readonly Dictionary<ulong, ulong> _peerEpochs = new();
     private readonly HashSet<ulong> _announcedPeers = new();
@@ -54,7 +59,7 @@ internal sealed class SteamLobby : IDisposable
     public bool IsReady => _ready;
     public bool IsInLobby => _lobbyId.m_SteamID != 0;
     public bool IsHost => IsInLobby && LocalSteamId == _hostSteamId;
-    public ulong LocalSteamId => _ready ? SteamUser.GetSteamID().m_SteamID : 0;
+    public ulong LocalSteamId => _localSteamId;
     public ulong HostSteamId => _hostSteamId;
     public ulong LobbyId => _lobbyId.m_SteamID;
     public IReadOnlyList<ulong> Members => _members;
@@ -115,6 +120,7 @@ internal sealed class SteamLobby : IDisposable
         }
         _useNative = _nativeAvailable;
         _reassembly = new LobbyReassembly(_useNative ? LobbyPackets.NativeChunkPayload : LobbyPackets.ChunkPayload);
+        _localSteamId = SteamUser.GetSteamID().m_SteamID;
         _ready = true;
         MelonLogger.Msg($"Steam ready; local Steam ID {LocalSteamId}; transport={(_nativeAvailable ? "native" : "chat")}.");
         if (!TryJoinLaunchLobby() && Environment.GetCommandLineArgs().Contains("--mvzmp-host"))
@@ -125,6 +131,11 @@ internal sealed class SteamLobby : IDisposable
     {
         if (!_ready || _disposed)
             return;
+        if (!SteamManager.Initialized)
+        {
+            Leave();
+            return;
+        }
         if (IsInLobby)
         {
             var owner = SteamMatchmaking.GetLobbyOwner(_lobbyId).m_SteamID;
@@ -135,6 +146,7 @@ internal sealed class SteamLobby : IDisposable
                 return;
             }
             RefreshMembers();
+            SendPoses();
             for (var i = 0; i < (_useNative ? 1 : PacketsPerTick) && _outgoing.Count != 0; i++)
             {
                 var queued = _outgoing.Peek();
@@ -184,7 +196,10 @@ internal sealed class SteamLobby : IDisposable
                 _sendStalledSince = null;
             }
             if (_useNative)
-                ReceiveNative();
+            {
+                ReceiveNative(PoseChannel);
+                ReceiveNative(NativeChannel);
+            }
         }
         foreach (var (sender, payload) in _reassembly.Expire(DateTime.UtcNow))
             MessageReceived?.Invoke(sender, payload);
@@ -223,7 +238,7 @@ internal sealed class SteamLobby : IDisposable
             return;
         var previousMembers = _members;
         var announcedPeers = _announcedPeers.ToArray();
-        if (_useNative)
+        if (_useNative && SteamManager.Initialized)
             foreach (var peer in previousMembers)
                 if (peer != LocalSteamId)
                 {
@@ -231,12 +246,13 @@ internal sealed class SteamLobby : IDisposable
                     identity.SetSteamID64(peer);
                     SteamNetworkingMessages.CloseSessionWithUser(ref identity);
                 }
-        SteamMatchmaking.LeaveLobby(_lobbyId);
+        if (SteamManager.Initialized) SteamMatchmaking.LeaveLobby(_lobbyId);
         MelonLogger.Msg($"Left lobby {_lobbyId.m_SteamID}.");
         _lobbyId = default;
         _hostSteamId = 0;
         _members = Array.Empty<ulong>();
         _outgoing.Clear();
+        _poses.Clear();
         _queuedBytes = 0;
         _sendStalledSince = null;
         _nextSequence.Clear();
@@ -255,6 +271,12 @@ internal sealed class SteamLobby : IDisposable
         if (!IsInLobby || peer == LocalSteamId || !_members.Contains(peer) ||
             !_peerEpochs.TryGetValue(peer, out var recipientEpoch))
             return false;
+        if (!reliable)
+        {
+            if (payload.Length > LobbyPackets.MaxTransientPayload) return false;
+            _poses.Queue(peer, _localEpoch, recipientEpoch, payload);
+            return true;
+        }
         if (payload.Length > LobbyPackets.MaxPayload)
             throw new ArgumentOutOfRangeException(nameof(payload), "Application messages are limited to 4 MiB.");
         var chunkSize = _useNative ? LobbyPackets.NativeChunkPayload : LobbyPackets.ChunkPayload;
@@ -279,8 +301,6 @@ internal sealed class SteamLobby : IDisposable
             if (payload.Length == 0)
                 break;
         }
-        // Chunk reassembly and ordered delivery currently require reliable sends.
-        _ = reliable;
         return true;
     }
 
@@ -335,6 +355,8 @@ internal sealed class SteamLobby : IDisposable
         _useNative = transport == "native";
         _reassembly = new LobbyReassembly(_useNative ? LobbyPackets.NativeChunkPayload : LobbyPackets.ChunkPayload);
         _lobbyId = lobby;
+        _poseSendDiagnostics = _poseReceiveDiagnostics = 0;
+        _poseUnderLoadLogged = false;
         _hostSteamId = owner;
         do
         {
@@ -409,6 +431,7 @@ internal sealed class SteamLobby : IDisposable
     private void ResetPeer(ulong peer, bool notify)
     {
         _nextSequence.Remove(peer);
+        _poses.RemovePeer(peer);
         _reassembly.RemovePeer(peer);
         _peerEpochs.Remove(peer);
         DropQueuedForPeer(peer);
@@ -456,11 +479,50 @@ internal sealed class SteamLobby : IDisposable
             bytes[i] = buffer[i];
         if (!LobbyPackets.TryDecode(bytes, out var packet) || !MatchesSession(sender.m_SteamID, packet))
             return;
-        foreach (var (peer, payload) in _reassembly.Accept(sender.m_SteamID, packet, DateTime.UtcNow))
+        DeliverPacket(sender.m_SteamID, packet);
+    }
+
+    private void SendPoses()
+    {
+        foreach (var (peer, bytes) in _poses.Drain())
+        {
+            if (!_members.Contains(peer)) continue;
+            try
+            {
+                var result = _useNative
+                    ? SendNative(new QueuedPacket(peer, 0, bytes), transient: true)
+                    : (SteamMatchmaking.SendLobbyChatMsg(_lobbyId, new Il2CppStructArray<byte>(bytes), bytes.Length)
+                        ? EResult.k_EResultOK : EResult.k_EResultFail);
+                // No retry: the next frame supersedes this pose, including during congestion or connection setup.
+                if (_poseSendDiagnostics++ < 8 || (!_poseUnderLoadLogged && _queuedBytes > 0))
+                {
+                    MelonLogger.Msg($"Pose send peer={peer} transport={(_useNative ? "unreliable-no-delay" : "chat-latest")} bytes={bytes.Length} reliableQueued={_queuedBytes} result={result}.");
+                    if (_queuedBytes > 0) _poseUnderLoadLogged = true;
+                }
+            }
+            catch (Exception exception)
+            {
+                if (_poseSendDiagnostics++ < 8)
+                    MelonLogger.Warning($"Pose send dropped: {exception.Message}");
+            }
+        }
+    }
+
+    private void DeliverPacket(ulong sender, LobbyPacket packet)
+    {
+        if (packet.Transient)
+        {
+            if (!_poses.Accept(sender, packet)) return;
+            if (_poseReceiveDiagnostics++ < 8)
+                MelonLogger.Msg($"Pose receive peer={sender} sequence={packet.Sequence} bytes={packet.Chunk.Length} channel={(_useNative ? PoseChannel : 0)}.");
+            MessageReceived?.Invoke(sender, packet.Chunk);
+            return;
+        }
+        foreach (var (peer, payload) in _reassembly.Accept(sender, packet, DateTime.UtcNow))
             MessageReceived?.Invoke(peer, payload);
     }
 
-    private EResult SendNative(QueuedPacket queued)
+    private EResult SendNative(QueuedPacket queued, bool transient = false)
     {
         var identity = new SteamNetworkingIdentity();
         identity.SetSteamID64(queued.Peer);
@@ -469,8 +531,9 @@ internal sealed class SteamLobby : IDisposable
         {
             Marshal.Copy(queued.Bytes, 0, pointer, queued.Bytes.Length);
             var result = SteamNetworkingMessages.SendMessageToUser(ref identity, pointer, (uint)queued.Bytes.Length,
-                Constants.k_nSteamNetworkingSend_Reliable, NativeChannel);
-            if (_nativeSendDiagnostics++ < 8)
+                transient ? Constants.k_nSteamNetworkingSend_UnreliableNoDelay : Constants.k_nSteamNetworkingSend_Reliable,
+                transient ? PoseChannel : NativeChannel);
+            if (!transient && _nativeSendDiagnostics++ < 8)
                 MelonLogger.Msg($"Native send peer={queued.Peer} seq={queued.Sequence} bytes={queued.Bytes.Length} result={result}.");
             return result;
         }
@@ -480,14 +543,14 @@ internal sealed class SteamLobby : IDisposable
         }
     }
 
-    private void ReceiveNative()
+    private void ReceiveNative(int channel)
     {
         try
         {
             var pointers = new Il2CppStructArray<IntPtr>(16);
             for (var batch = 0; batch < 4; batch++)
             {
-                var count = SteamNetworkingMessages.ReceiveMessagesOnChannel(NativeChannel, pointers, pointers.Length);
+                var count = SteamNetworkingMessages.ReceiveMessagesOnChannel(channel, pointers, pointers.Length);
                 if (count < 0 || count > pointers.Length)
                     throw new InvalidOperationException($"Invalid native receive count {count}.");
                 for (var i = 0; i < count; i++)
@@ -502,16 +565,16 @@ internal sealed class SteamLobby : IDisposable
                         if (_nativeReceiveDiagnostics++ < 8)
                             MelonLogger.Msg($"Native receive peer={sender} bytes={message.m_cbSize} channel={message.m_nChannel}.");
                         if (message.m_cbSize < LobbyPackets.HeaderSize ||
-                            message.m_cbSize > LobbyPackets.HeaderSize + LobbyPackets.NativeChunkPayload ||
-                            !_members.Contains(sender))
+                            message.m_cbSize > LobbyPackets.HeaderSize +
+                                (channel == PoseChannel ? LobbyPackets.MaxTransientPayload : LobbyPackets.NativeChunkPayload) ||
+                            sender == LocalSteamId || !_members.Contains(sender))
                             continue;
                         var bytes = new byte[message.m_cbSize];
                         Marshal.Copy(message.m_pData, bytes, 0, bytes.Length);
                         if (!LobbyPackets.TryDecode(bytes, out var packet, LobbyPackets.NativeChunkPayload) ||
-                            !MatchesSession(sender, packet))
+                            !MatchesSession(sender, packet) || packet.Transient != (channel == PoseChannel))
                             continue;
-                        foreach (var (peer, payload) in _reassembly.Accept(sender, packet, DateTime.UtcNow))
-                            MessageReceived?.Invoke(peer, payload);
+                        DeliverPacket(sender, packet);
                     }
                     finally
                     {

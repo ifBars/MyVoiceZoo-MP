@@ -1,6 +1,6 @@
 # Runtime validation — 2026-09-23
 
-## Environment
+## Initial 0.2.0 environment
 
 - MyVoiceZoo: installed Unity 2022.3.62f2 IL2CPP build, game version 1.0.
 - MelonLoader 0.7.3, mod 0.2.0, wire protocol 3.
@@ -11,7 +11,7 @@
 
 - Release compilation without warnings/errors; managed transport framing, ordering, reassembly expiry, limits, and epoch checks.
 - Native SteamNetworkingMessages sends and receives between the two game processes.
-- Initial full-state synchronization, guest animal adoption, native reveal/editor flow, naming, voice recording, host persistence, placement, area and camp purchases.
+- Initial full-state synchronization, guest animal adoption, native reveal/editor flow, naming, synthetic audio through native recording completion, host persistence, placement, area and camp purchases.
 - Costume purchase/equip and editing an existing adopted animal.
 - Five-second mono 48 kHz recording transferred to the host and saved as a 480,044-byte WAV.
 - Existing guest save remains byte-identical while joined. Guest's original gold and animals return on leaving.
@@ -27,10 +27,24 @@ Final rendered acceptance run: `run-20260923-053105-c446f967`. Both peers passed
 
 ## Remaining validation
 
-A real two-account Steam overlay invite/accept session is not covered by GSE. WAN latency and four simultaneous players are also not established by the local two-process run. The mod does not migrate the host.
+A real two-account Steam playtest of 0.2.0 was subsequently reported by the user: most features worked, but remote movement/depth and possibly guest microphone capture needed investigation. This is user-reported evidence; the automated GSE run does not establish real Steam invite acceptance. Four simultaneous players remain untested. The mod does not migrate the host.
 
 ## Interop findings
 
 Generated IL2CPP wrappers are not sufficient evidence of safe calls. SteamNetworkingMessagesSessionFailed callback registration rejected its non-blittable struct; GetSessionConnectionInfo out-structure access crashed natively. The transport uses supported callbacks, bounded queues, send-result backpressure, and lobby ownership/liveness instead. Animator parameter arrays failed managed constraints and indexed parameter introspection crashed natively; the replica uses the game's verified `isRun` parameter directly. TextMeshPro font assignment requires an active initialized renderer.
 
 
+
+## 0.2.1 playtest fixes
+
+- Protocol 4 puts 20 Hz player poses on a separate latest-only, sequenced unreliable channel. Managed tests cover replacement, loss, reorder, duplicate rejection, sequence wrap, session epochs, and isolation from reliable reassembly.
+- Timestamped presentation tests cover irregular arrival, following a corner, holding on packet loss, stale samples, invalid coordinates, and teleport snapping. No velocity extrapolation is used.
+- Runtime source inspection confirmed the native player uses `SpriteSortPoint.Pivot`; replicas now copy it. They also preserve any source sorting groups.
+- `run-20260923-063111-e4934fc8` passed the rendered shared-zoo regression and native movement probe. The native player stopped at approximately (0, 2.12) against the tent while upward input remained held. Both viewpoints at `motion-03.png` were inspected: the source and remote replica stand in front of the tent, with only remote nameplates. The top-right overlay is absent.
+- `run-20260923-062821-68210529` exercised actual guest microphone capture on the local headset through the native record button and recorder stop. Sample position advanced to 86,877; native trimming returned 8,820 samples at 44.1 kHz. PCM peak was 0.002716 and RMS 0.000652. Identical hash/levels were verified on the host, guest, and guest after reconnect. This proves nonzero capture and transfer on this machine; it does not establish intelligible speech, speaker audibility, or the other player's hardware configuration.
+- The normal synthetic-tone regression verifies non-silent PCM and playback AudioClip contents on both peers and after reconnect. Native save reload remains covered by the earlier persistence test; current microphone WAV reload was not separately rerun.
+- Recording diagnostics identify the game-selected device, start failures, and silence before transfer without changing microphone selection.
+
+The scripted adoption flow can log native `CollectionView.Hide` null-reference exceptions because it invokes the editor without first browsing the collection. Shared-state and recording assertions still pass; this is not being reported as an exception-free manual playtest. Repeat two-account movement feel and recording with the intended microphone remains useful after updating both players.
+
+- Final native settings inspection used the retained populated host clone from `run-20260923-062450-62dfa8a5`; `evidence/settings-Latest.log` records Host/Leave button callback success and hide success. The final `host-data/settings.png` was visually inspected: native audio/language/resolution/quit controls remain within the frame, the co-op column fits inside it, and disabled actions are visibly muted. The settings-only launch needs explicit window width/height; an earlier hidden launch without them produced a black capture and was rejected as visual evidence.
