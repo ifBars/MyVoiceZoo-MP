@@ -19,3 +19,5 @@ Shared progress belongs to the host. Leaving restores the guest's own zoo; guest
 Built for MyVoiceZoo's Unity 2022.3.62f2 IL2CPP build with MelonLoader 0.7.3. The mod rejects mismatched game binaries or mod protocols. Steam must be initialized by the game.
 
 This package contains no game assemblies, generated wrappers, saves, recordings, or Steam emulator files. Remove Mods/MVZ.MP.dll to uninstall the mod.
+
+Validated with two isolated GSE game processes, including rendered player/nameplate checks, shared purchases/recordings, reconnect, host departure, and guest save preservation. Real two-account Steam overlay invite acceptance and WAN/four-player testing remain unverified.

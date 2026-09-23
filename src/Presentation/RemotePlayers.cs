@@ -22,6 +22,7 @@ internal sealed class RemotePlayers : IDisposable
         public string DisplayName = string.Empty;
         public PlayerPose Target;
         public int CostumeId = -1;
+        public bool NameReported;
     }
 
     private readonly Dictionary<ulong, Replica> _replicas = new();
@@ -118,6 +119,15 @@ internal sealed class RemotePlayers : IDisposable
             var destination = new Vector3(replica.Target.X, replica.Target.Y, replica.Target.Z);
             replica.Root.transform.position = Vector3.Lerp(replica.Root.transform.position, destination,
                 Mathf.Clamp01(Time.deltaTime * 12f));
+
+            var bounds = replica.Renderer.bounds;
+            replica.Name.transform.position = new Vector3(bounds.center.x, bounds.max.y + .2f, replica.Root.transform.position.z);
+            if (!replica.NameReported && !string.IsNullOrEmpty(replica.Name.text))
+            {
+                replica.Name.ForceMeshUpdate();
+                MelonLogger.Msg($"COOP_NAMEPLATE text={replica.Name.text} bounds={replica.Name.bounds.size} scale={replica.Name.transform.lossyScale}");
+                replica.NameReported = true;
+            }
 
             // The source renderer and library are game-owned assets. A separate GameObject
             // holds only visual components and remains inert from a gameplay perspective.
@@ -234,7 +244,7 @@ internal sealed class RemotePlayers : IDisposable
             var nameObject = new GameObject("Peer name");
             nameObject.transform.SetParent(root.transform, false);
             nameObject.transform.localPosition = new Vector3(0f, 0.75f, 0f);
-            nameObject.transform.localScale = new Vector3(0.1f, 0.1f, 1f);
+            nameObject.transform.localScale = Vector3.one;
             var name = nameObject.AddComponent<TextMeshPro>();
             var nativeText = GameManager.Instance?._uiManager?
                 .GetComponentInChildren<TextMeshProUGUI>(true);
@@ -244,6 +254,10 @@ internal sealed class RemotePlayers : IDisposable
                 catch (Exception e) { if (reportStages) MelonLogger.Warning($"COOP_NAME_FONT_FALLBACK {e.Message}"); }
             }
             name.fontSize = 3f;
+            name.rectTransform.sizeDelta = new Vector2(8f, 1f);
+            name.enableWordWrapping = false;
+            name.outlineColor = Color.black;
+            name.outlineWidth = 0.2f;
             name.richText = false;
             name.alignment = TextAlignmentOptions.Center;
             name.color = Color.white;
@@ -324,5 +338,3 @@ internal sealed class RemotePlayers : IDisposable
         return asset;
     }
 }
-
-

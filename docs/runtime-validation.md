@@ -17,11 +17,13 @@
 - Existing guest save remains byte-identical while joined. Guest's original gold and animals return on leaving.
 - Leave/rejoin into the same lobby, renewed session epochs, a fresh 480,000-byte recording download, and automatic solo restoration when the host leaves.
 - Native game reload restores the host's saved animal, name, position, areas/camps, and five-second recording.
-- Rendered game shows remote character replicas and distinct costumes; native UI panel is readable.
+- Rendered game shows remote character replicas and distinct costumes; native UI panel is readable. Both viewpoints show a readable nameplate above the other player, with no self nameplate.
 
-Primary local evidence is retained outside Git under `E:\MVZ-MP-Testing`. The native gameplay run `run-20260923-052109-35f2edaf` passed both peers. The larger recording run `run-20260923-052214-68f018b0` passed gameplay and reload; its nameplate construction error was subsequently repaired. The rendered costume/edit run `run-20260923-052532-1aa0045d` passed gameplay with no avatar creation errors; nameplate readability is under final visual verification.
+Primary local evidence is retained outside Git under `E:\MVZ-MP-Testing`. The native gameplay run `run-20260923-052109-35f2edaf` passed both peers. The larger recording run `run-20260923-052214-68f018b0` passed gameplay and reload; its nameplate construction error was subsequently repaired. The rendered costume/edit run `run-20260923-052532-1aa0045d` passed gameplay with no avatar creation errors; nameplate sizing was finalized in the subsequent run.
 
 The follow-up native run `run-20260923-052902-5f08a9b7` passed the fresh recording download and host-departure checks.
+
+Final rendered acceptance run: `run-20260923-053105-c446f967`. Both peers passed all shared-zoo actions, costume/edit, existing-save preservation, fresh recording download, reconnect, and host departure. The client screenshot and host frame `coop-123150036.png` were visually inspected and confirm other-player-only nameplates. No avatar exceptions or rejected actions were logged.
 
 ## Remaining validation
 
@@ -30,4 +32,5 @@ A real two-account Steam overlay invite/accept session is not covered by GSE. WA
 ## Interop findings
 
 Generated IL2CPP wrappers are not sufficient evidence of safe calls. SteamNetworkingMessagesSessionFailed callback registration rejected its non-blittable struct; GetSessionConnectionInfo out-structure access crashed natively. The transport uses supported callbacks, bounded queues, send-result backpressure, and lobby ownership/liveness instead. Animator parameter arrays failed managed constraints and indexed parameter introspection crashed natively; the replica uses the game's verified `isRun` parameter directly. TextMeshPro font assignment requires an active initialized renderer.
+
 
