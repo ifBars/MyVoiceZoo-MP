@@ -15,6 +15,8 @@
     <Error Condition="!Exists('$(GameInteropDir)\Assembly-CSharp.dll')" Text="Run MyVoiceZoo with MelonLoader once to generate IL2CPP assemblies." />
   </Target>
   <ItemGroup>
+    <Compile Remove="tests/**/*.cs;work/**/*.cs" />
+    <Reference Include="0Harmony"><HintPath>$(MelonRuntimeDir)\0Harmony.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="MelonLoader"><HintPath>$(MelonRuntimeDir)\MelonLoader.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="Il2CppInterop.Runtime"><HintPath>$(MelonRuntimeDir)\Il2CppInterop.Runtime.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="Assembly-CSharp"><HintPath>$(GameInteropDir)\Assembly-CSharp.dll</HintPath><Private>false</Private></Reference>
@@ -22,5 +24,13 @@
     <Reference Include="Il2Cppcom.rlabrecque.steamworks.net"><HintPath>$(GameInteropDir)\Il2Cppcom.rlabrecque.steamworks.net.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="UnityEngine.CoreModule"><HintPath>$(GameInteropDir)\UnityEngine.CoreModule.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="UnityEngine.InputLegacyModule"><HintPath>$(GameInteropDir)\UnityEngine.InputLegacyModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.AudioModule"><HintPath>$(GameInteropDir)\UnityEngine.AudioModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.IMGUIModule"><HintPath>$(GameInteropDir)\UnityEngine.IMGUIModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.AnimationModule"><HintPath>$(GameInteropDir)\UnityEngine.AnimationModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.UIModule"><HintPath>$(GameInteropDir)\UnityEngine.UIModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.UI"><HintPath>$(GameInteropDir)\UnityEngine.UI.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Unity.TextMeshPro"><HintPath>$(GameInteropDir)\Unity.TextMeshPro.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Unity.2D.Animation.Runtime"><HintPath>$(GameInteropDir)\Unity.2D.Animation.Runtime.dll</HintPath><Private>false</Private></Reference>
   </ItemGroup>
 </Project>
+

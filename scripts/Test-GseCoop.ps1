@@ -32,7 +32,7 @@ function Assert-Outside([string]$candidate, [string]$protected) {
     }
 }
 function Read-Log([string]$path) {
-    if (Test-Path -LiteralPath $path -PathType Leaf) { return [IO.File]::ReadAllText($path) }
+    if (Test-Path -LiteralPath $path -PathType Leaf) { $stream = [IO.File]::Open($path, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite); $reader = [IO.StreamReader]::new($stream); try { return $reader.ReadToEnd() } finally { $reader.Dispose() } }
     return ''
 }
 function Wait-Log([string]$path, [string]$pattern, [string]$phase, [System.Diagnostics.Process[]]$processes) {
@@ -102,7 +102,7 @@ if (-not $SkipBuild) {
 if (-not (Test-Path -LiteralPath $dll -PathType Leaf)) { throw "Mod DLL missing: $dll" }
 
 $run = Join-Path $root ("run-" + (Get-Date -Format 'yyyyMMdd-HHmmss') + '-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
-$host = Join-Path $run 'host'
+$hostInstall = Join-Path $run 'host'
 $client = Join-Path $run 'client'
 $evidence = Join-Path $run 'evidence'
 $originalSave = Join-Path (Split-Path -Parent $save) ("MyVoiceZoo.mvzmp-backup-" + [guid]::NewGuid().ToString('N'))
@@ -116,7 +116,7 @@ try {
     Write-Output "User-data backup: $originalSave"
     if ($saveWasPresent) { Move-Item -LiteralPath $save -Destination $originalSave }
     $saveIsGuarded = $true
-    Copy-Install $host 'MVZMP-host' $HostSteamId
+    Copy-Install $hostInstall 'MVZMP-host' $HostSteamId
     Copy-Install $client 'MVZMP-client' $ClientSteamId
     $hostArgs = @('--mvzmp-host', '-batchmode', '-nographics')
     $clientArgs = @('-batchmode', '-nographics')
@@ -130,9 +130,9 @@ try {
     New-Item -ItemType Directory -Path $hostData, $clientData | Out-Null
     $hostArgs += "`"--mvzmp-data-dir=$hostData`""
     $clientArgs += "`"--mvzmp-data-dir=$clientData`""
-    $hostLog = Join-Path $host 'MelonLoader\Latest.log'
+    $hostLog = Join-Path $hostInstall 'MelonLoader\Latest.log'
     $clientLog = Join-Path $client 'MelonLoader\Latest.log'
-    $hostProcess = Start-Process -FilePath (Join-Path $host 'MyVoiceZoo.exe') -WorkingDirectory $host -ArgumentList $hostArgs -PassThru
+    $hostProcess = Start-Process -FilePath (Join-Path $hostInstall 'MyVoiceZoo.exe') -WorkingDirectory $hostInstall -ArgumentList $hostArgs -WindowStyle Hidden -PassThru
     $processes.Add($hostProcess)
     Wait-Log $hostLog 'Loaded\. F6 host, F7 invite, F8 leave\.' 'host-mod-loaded' @($hostProcess) | Out-Null
     $hostSteam = Wait-Log $hostLog "Steam ready; local Steam ID ($HostSteamId)" 'host-steam' @($hostProcess)
@@ -140,14 +140,14 @@ try {
     $lobbyId = $created.Groups[1].Value
     Wait-Log $hostLog "Joined lobby $lobbyId; owner=$HostSteamId; members=1; role=host" 'host-entered' @($hostProcess) | Out-Null
     $clientArgs += @('+connect_lobby', $lobbyId)
-    $clientProcess = Start-Process -FilePath (Join-Path $client 'MyVoiceZoo.exe') -WorkingDirectory $client -ArgumentList $clientArgs -PassThru
+    $clientProcess = Start-Process -FilePath (Join-Path $client 'MyVoiceZoo.exe') -WorkingDirectory $client -ArgumentList $clientArgs -WindowStyle Hidden -PassThru
     $processes.Add($clientProcess)
     Wait-Log $clientLog 'Loaded\. F6 host, F7 invite, F8 leave\.' 'client-mod-loaded' @($hostProcess, $clientProcess) | Out-Null
     Wait-Log $clientLog "Steam ready; local Steam ID ($ClientSteamId)" 'client-steam' @($hostProcess, $clientProcess) | Out-Null
     Wait-Log $clientLog "Joined lobby $lobbyId; owner=$HostSteamId; members=([2-9]|[1-9][0-9]+); role=guest" 'client-entered' @($hostProcess, $clientProcess) | Out-Null
-    Wait-Log $hostLog 'Lobby member update; members=([2-9]|[1-9][0-9]+)' 'host-members' @($hostProcess, $clientProcess) | Out-Null
-    Wait-Log $hostLog "Handshake from $ClientSteamId in lobby $lobbyId" 'host-handshake' @($hostProcess, $clientProcess) | Out-Null
-    Wait-Log $clientLog "Handshake from $HostSteamId in lobby $lobbyId" 'client-handshake' @($hostProcess, $clientProcess) | Out-Null
+    Wait-Log $hostLog "COOP PEER_READY $ClientSteamId" 'host-members' @($hostProcess, $clientProcess) | Out-Null
+    Wait-Log $hostLog "COOP PEER_READY $ClientSteamId" 'host-handshake' @($hostProcess, $clientProcess) | Out-Null
+    Wait-Log $clientLog 'COOP SYNC_READY revision=' 'client-handshake' @($hostProcess, $clientProcess) | Out-Null
     if ($Scenario) {
         Wait-Log $hostLog "PASS\|$([regex]::Escape($Scenario))\|" 'host-scenario' @($hostProcess, $clientProcess) | Out-Null
         Wait-Log $clientLog "PASS\|$([regex]::Escape($Scenario))\|" 'client-scenario' @($hostProcess, $clientProcess) | Out-Null
@@ -164,7 +164,7 @@ try {
             if (-not $process.HasExited) { Stop-Process -Id $process.Id -Force -ErrorAction Stop; $process.WaitForExit(10000) | Out-Null }
         } catch { Write-Warning "Could not stop launched PID $($process.Id): $_" }
     }
-    foreach ($pair in @(@($host, 'host'), @($client, 'client'))) {
+    foreach ($pair in @(@($hostInstall, 'host'), @($client, 'client'))) {
         $latest = Join-Path $pair[0] 'MelonLoader\Latest.log'
         if (Test-Path -LiteralPath $latest) { Copy-Item -LiteralPath $latest -Destination (Join-Path $evidence "$($pair[1])-Latest.log") }
     }
@@ -181,3 +181,7 @@ try {
     } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $evidence 'result.json')
     Write-Output "Evidence retained: $evidence"
 }
+
+
+
+
