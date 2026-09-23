@@ -31,6 +31,7 @@ internal sealed class RemotePlayers : IDisposable
     private Player? _source;
     private bool _disposed;
     private bool _reportedVisuals;
+    private bool _createFailureLogged;
 
     public PlayerPose? TickLocalPose()
     {
@@ -172,102 +173,117 @@ internal sealed class RemotePlayers : IDisposable
         // bind by relative transform path, so putting everything on one object
         // would leave clips and SpriteResolver without their native targets.
         var root = new GameObject($"MVZ-MP peer {peer}");
-        root.SetActive(false);
-        var paths = new Dictionary<int, Transform>();
-        var libraryObject = VisualTransform(local._spriteLibrary.transform, local.transform, root.transform, paths);
-        var animatorObject = VisualTransform(local.animator.transform, local.transform, root.transform, paths);
-        if (libraryObject == null || animatorObject == null)
+        try
+        {
+            root.SetActive(false);
+            var paths = new Dictionary<int, Transform>();
+            var libraryObject = VisualTransform(local._spriteLibrary.transform, local.transform, root.transform, paths);
+            var animatorObject = VisualTransform(local.animator.transform, local.transform, root.transform, paths);
+            if (libraryObject == null || animatorObject == null)
+            {
+                UnityEngine.Object.Destroy(root);
+                return null;
+            }
+
+            var library = libraryObject.gameObject.AddComponent<SpriteLibrary>();
+            library.spriteLibraryAsset = local._spriteLibrary.spriteLibraryAsset;
+            SpriteRenderer? renderer = null;
+            var renderers = new List<(SpriteRenderer Source, SpriteRenderer Clone)>();
+            foreach (var nativeRenderer in local.GetComponentsInChildren<SpriteRenderer>(true))
+            {
+                var visual = VisualTransform(nativeRenderer.transform, local.transform, root.transform, paths);
+                if (visual == null) continue;
+                var clone = visual.gameObject.AddComponent<SpriteRenderer>();
+                clone.sprite = nativeRenderer.sprite;
+                clone.sharedMaterial = nativeRenderer.sharedMaterial;
+                clone.sortingLayerID = nativeRenderer.sortingLayerID;
+                clone.sortingOrder = nativeRenderer.sortingOrder;
+                clone.color = nativeRenderer.color;
+                clone.flipX = nativeRenderer.flipX;
+                renderers.Add((nativeRenderer, clone));
+                if (nativeRenderer == local.spriteRenderer) renderer = clone;
+            }
+            if (renderer == null)
+            {
+                UnityEngine.Object.Destroy(root);
+                return null;
+            }
+
+            var resolvers = new List<(SpriteResolver Source, SpriteResolver Clone)>();
+            foreach (var nativeResolver in local.GetComponentsInChildren<SpriteResolver>(true))
+            {
+                var visual = VisualTransform(nativeResolver.transform, local.transform, root.transform, paths);
+                if (visual == null || visual.GetComponent<SpriteRenderer>() == null) continue;
+                var resolver = visual.gameObject.AddComponent<SpriteResolver>();
+                resolvers.Add((nativeResolver, resolver));
+            }
+            if (!_reportedVisuals)
+            {
+                MelonLogger.Msg($"COOP_VISUAL_SOURCE renderer={VisualPath(local.spriteRenderer.transform, local.transform)} animator={VisualPath(local.animator.transform, local.transform)} library={VisualPath(local._spriteLibrary.transform, local.transform)} renderers={renderers.Count} resolvers={resolvers.Count}");
+                _reportedVisuals = true;
+            }
+
+            var animator = animatorObject.gameObject.AddComponent<Animator>();
+            animator.runtimeAnimatorController = local.animator.runtimeAnimatorController;
+            animator.fireEvents = false;
+            string? moveBool = null;
+            string? moveFloat = null;
+            for (var i = 0; i < local.animator.parameterCount; i++)
+            {
+                var parameter = local.animator.GetParameterInternal(i);
+                if (parameter == null) continue;
+                if (!parameter.name.Contains("move", StringComparison.OrdinalIgnoreCase) &&
+                    !parameter.name.Contains("walk", StringComparison.OrdinalIgnoreCase) &&
+                    !parameter.name.Contains("speed", StringComparison.OrdinalIgnoreCase))
+                    continue;
+                if (parameter.type == AnimatorControllerParameterType.Bool)
+                    moveBool = parameter.name;
+                if (parameter.type == AnimatorControllerParameterType.Float)
+                    moveFloat = parameter.name;
+            }
+
+            var nameObject = new GameObject("Peer name");
+            nameObject.transform.SetParent(root.transform, false);
+            nameObject.transform.localPosition = new Vector3(0f, 0.75f, 0f);
+            nameObject.transform.localScale = new Vector3(0.1f, 0.1f, 1f);
+            var name = nameObject.AddComponent<TextMeshPro>();
+            var nativeText = GameManager.Instance?._uiManager?
+                .GetComponentInChildren<TextMeshProUGUI>(true);
+            if (nativeText != null) name.font = nativeText.font;
+            name.richText = false;
+            name.fontSize = 3f;
+            name.alignment = TextAlignmentOptions.Center;
+            name.color = Color.white;
+            name.renderer.sortingLayerID = renderer.sortingLayerID;
+            name.renderer.sortingOrder = renderer.sortingOrder + 1;
+            root.SetActive(true);
+            foreach (var (source, clone) in resolvers)
+                clone.SetCategoryAndLabel(source.GetCategory(), source.GetLabel());
+            library.RefreshSpriteResolvers();
+
+            return new Replica
+            {
+                Root = root,
+                Renderer = renderer,
+                Renderers = renderers,
+                Animator = animator,
+                Library = library,
+                Name = name,
+                MoveBool = moveBool,
+                MoveFloat = moveFloat,
+                DisplayName = string.Empty
+            };
+        }
+        catch (Exception e)
         {
             UnityEngine.Object.Destroy(root);
+            if (!_createFailureLogged)
+            {
+                MelonLogger.Warning($"COOP_VISUAL_CREATE_FAILED {e}");
+                _createFailureLogged = true;
+            }
             return null;
         }
-
-        var library = libraryObject.gameObject.AddComponent<SpriteLibrary>();
-        library.spriteLibraryAsset = local._spriteLibrary.spriteLibraryAsset;
-        SpriteRenderer? renderer = null;
-        var renderers = new List<(SpriteRenderer Source, SpriteRenderer Clone)>();
-        foreach (var nativeRenderer in local.GetComponentsInChildren<SpriteRenderer>(true))
-        {
-            var visual = VisualTransform(nativeRenderer.transform, local.transform, root.transform, paths);
-            if (visual == null) continue;
-            var clone = visual.gameObject.AddComponent<SpriteRenderer>();
-            clone.sprite = nativeRenderer.sprite;
-            clone.sharedMaterial = nativeRenderer.sharedMaterial;
-            clone.sortingLayerID = nativeRenderer.sortingLayerID;
-            clone.sortingOrder = nativeRenderer.sortingOrder;
-            clone.color = nativeRenderer.color;
-            clone.flipX = nativeRenderer.flipX;
-            renderers.Add((nativeRenderer, clone));
-            if (nativeRenderer == local.spriteRenderer) renderer = clone;
-        }
-        if (renderer == null)
-        {
-            UnityEngine.Object.Destroy(root);
-            return null;
-        }
-
-        var resolvers = new List<(SpriteResolver Source, SpriteResolver Clone)>();
-        foreach (var nativeResolver in local.GetComponentsInChildren<SpriteResolver>(true))
-        {
-            var visual = VisualTransform(nativeResolver.transform, local.transform, root.transform, paths);
-            if (visual == null || visual.GetComponent<SpriteRenderer>() == null) continue;
-            var resolver = visual.gameObject.AddComponent<SpriteResolver>();
-            resolvers.Add((nativeResolver, resolver));
-        }
-        if (!_reportedVisuals)
-        {
-            MelonLogger.Msg($"COOP_VISUAL_SOURCE renderer={VisualPath(local.spriteRenderer.transform, local.transform)} animator={VisualPath(local.animator.transform, local.transform)} library={VisualPath(local._spriteLibrary.transform, local.transform)} renderers={renderers.Count} resolvers={resolvers.Count}");
-            _reportedVisuals = true;
-        }
-
-        var animator = animatorObject.gameObject.AddComponent<Animator>();
-        animator.runtimeAnimatorController = local.animator.runtimeAnimatorController;
-        animator.fireEvents = false;
-        string? moveBool = null;
-        string? moveFloat = null;
-        foreach (var parameter in local.animator.parameters)
-        {
-            if (!parameter.name.Contains("move", StringComparison.OrdinalIgnoreCase) &&
-                !parameter.name.Contains("walk", StringComparison.OrdinalIgnoreCase) &&
-                !parameter.name.Contains("speed", StringComparison.OrdinalIgnoreCase))
-                continue;
-            if (parameter.type == AnimatorControllerParameterType.Bool)
-                moveBool = parameter.name;
-            if (parameter.type == AnimatorControllerParameterType.Float)
-                moveFloat = parameter.name;
-        }
-
-        var nameObject = new GameObject("Peer name");
-        nameObject.transform.SetParent(root.transform, false);
-        nameObject.transform.localPosition = new Vector3(0f, 0.75f, 0f);
-        nameObject.transform.localScale = new Vector3(0.1f, 0.1f, 1f);
-        var name = nameObject.AddComponent<TextMeshPro>();
-        var nativeText = GameManager.Instance?._uiManager?
-            .GetComponentInChildren<TextMeshProUGUI>(true);
-        if (nativeText != null) name.font = nativeText.font;
-        name.richText = false;
-        name.fontSize = 3f;
-        name.alignment = TextAlignmentOptions.Center;
-        name.color = Color.white;
-        name.renderer.sortingLayerID = renderer.sortingLayerID;
-        name.renderer.sortingOrder = renderer.sortingOrder + 1;
-        root.SetActive(true);
-        foreach (var (source, clone) in resolvers)
-            clone.SetCategoryAndLabel(source.GetCategory(), source.GetLabel());
-        library.RefreshSpriteResolvers();
-
-        return new Replica
-        {
-            Root = root,
-            Renderer = renderer,
-            Renderers = renderers,
-            Animator = animator,
-            Library = library,
-            Name = name,
-            MoveBool = moveBool,
-            MoveFloat = moveFloat,
-            DisplayName = string.Empty
-        };
     }
 
     private static Transform? VisualTransform(Transform source, Transform sourceRoot, Transform replicaRoot,
