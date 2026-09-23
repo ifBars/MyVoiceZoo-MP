@@ -7,7 +7,9 @@ internal sealed class LobbyReassembly
     private static readonly TimeSpan Expiry = TimeSpan.FromSeconds(30);
     private readonly Dictionary<(ulong Sender, uint Sequence), Assembly> _assemblies = new();
     private readonly Dictionary<ulong, Receiver> _receivers = new();
+    private readonly int _chunkSize;
     private int _pendingBytes;
+    internal LobbyReassembly(int chunkSize = LobbyPackets.ChunkPayload) => _chunkSize = chunkSize;
     internal int PendingBytes => _pendingBytes;
     internal int PendingMessages => _assemblies.Count + _receivers.Values.Sum(receiver => receiver.Completed.Count);
 
@@ -26,7 +28,7 @@ internal sealed class LobbyReassembly
         {
             if (packet.Total > MaxPendingBytes - _pendingBytes || PendingMessages >= MaxPendingMessages)
                 yield break;
-            assembly = new Assembly(packet.Total, now);
+            assembly = new Assembly(packet.Total, now, _chunkSize);
             _assemblies.Add(key, assembly);
             _pendingBytes += packet.Total;
         }
@@ -111,24 +113,26 @@ internal sealed class LobbyReassembly
     private sealed class Assembly
     {
         private readonly bool[] _chunks;
+        private readonly int _chunkSize;
         private int _remaining;
         internal int Total { get; }
         internal DateTime Created { get; }
         internal byte[] Buffer { get; }
         internal bool Complete => _remaining == 0;
 
-        internal Assembly(int total, DateTime now)
+        internal Assembly(int total, DateTime now, int chunkSize)
         {
             Total = total;
             Created = now;
             Buffer = new byte[total];
-            _chunks = new bool[Math.Max(1, (total + LobbyPackets.ChunkPayload - 1) / LobbyPackets.ChunkPayload)];
+            _chunkSize = chunkSize;
+            _chunks = new bool[Math.Max(1, (total + chunkSize - 1) / chunkSize)];
             _remaining = _chunks.Length;
         }
 
         internal bool Add(LobbyPacket packet)
         {
-            var index = packet.Offset / LobbyPackets.ChunkPayload;
+            var index = packet.Offset / _chunkSize;
             if (index >= _chunks.Length || _chunks[index])
                 return false;
             packet.Chunk.CopyTo(Buffer.AsSpan(packet.Offset));

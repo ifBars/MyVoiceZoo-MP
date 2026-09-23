@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Runtime.InteropServices;
 using Il2Cpp;
 using Il2CppInterop.Runtime.InteropTypes.Arrays;
 using Il2CppSteamworks;
@@ -15,6 +16,8 @@ internal sealed class SteamLobby : IDisposable
     private const string ProtocolKey = "mvzmp_version";
     private const string BuildKey = "mvzmp_build";
     private const string GameKey = "mvzmp_game";
+    private const string TransportKey = "mvzmp_transport";
+    private const int NativeChannel = 27182;
     private const int MaxQueuedBytes = 8 * 1024 * 1024;
     private const int PacketsPerTick = 4;
 
@@ -23,7 +26,7 @@ internal sealed class SteamLobby : IDisposable
     private Callback<LobbyChatUpdate_t>? _memberChanged;
     private Callback<LobbyChatMsg_t>? _chatMessage;
     private CallResult<LobbyCreated_t>? _createResult;
-    private readonly LobbyReassembly _reassembly = new();
+    private LobbyReassembly _reassembly = new();
     private readonly Queue<QueuedPacket> _outgoing = new();
     private readonly Dictionary<ulong, uint> _nextSequence = new();
     private CSteamID _lobbyId;
@@ -34,6 +37,10 @@ internal sealed class SteamLobby : IDisposable
     private bool _ready;
     private bool _creating;
     private bool _disposed;
+    private bool _nativeAvailable;
+    private bool _useNative;
+    private Callback<SteamNetworkingMessagesSessionRequest_t>? _sessionRequested;
+    private Callback<SteamNetworkingMessagesSessionFailed_t>? _sessionFailed;
 
     public bool IsReady => _ready;
     public bool IsInLobby => _lobbyId.m_SteamID != 0;
@@ -70,7 +77,22 @@ internal sealed class SteamLobby : IDisposable
         _lobbyEntered = Callback<LobbyEnter_t>.Create((Action<LobbyEnter_t>)OnLobbyEntered);
         _memberChanged = Callback<LobbyChatUpdate_t>.Create((Action<LobbyChatUpdate_t>)OnMemberChanged);
         _chatMessage = Callback<LobbyChatMsg_t>.Create((Action<LobbyChatMsg_t>)OnChatMessage);
+        _sessionRequested = Callback<SteamNetworkingMessagesSessionRequest_t>.Create((Action<SteamNetworkingMessagesSessionRequest_t>)OnSessionRequested);
+        _sessionFailed = Callback<SteamNetworkingMessagesSessionFailed_t>.Create((Action<SteamNetworkingMessagesSessionFailed_t>)OnSessionFailed);
         _createResult = CallResult<LobbyCreated_t>.Create((Action<LobbyCreated_t, bool>)OnLobbyCreated);
+        try
+        {
+            var probe = new Il2CppStructArray<IntPtr>(1);
+            _nativeAvailable = SteamNetworkingMessages.ReceiveMessagesOnChannel(NativeChannel, probe, 1) >= 0;
+            if (probe[0] != IntPtr.Zero)
+                SteamNetworkingMessage_t.Release(probe[0]);
+        }
+        catch (Exception exception)
+        {
+            MelonLogger.Warning($"SteamNetworkingMessages unavailable; lobby chat fallback: {exception.Message}");
+        }
+        _useNative = _nativeAvailable;
+        _reassembly = new LobbyReassembly(_useNative ? LobbyPackets.NativeChunkPayload : LobbyPackets.ChunkPayload);
         _ready = true;
         MelonLogger.Msg($"Steam ready; local Steam ID {LocalSteamId}.");
         if (!TryJoinLaunchLobby() && Environment.GetCommandLineArgs().Contains("--mvzmp-host"))
@@ -93,18 +115,38 @@ internal sealed class SteamLobby : IDisposable
             RefreshMembers();
             for (var i = 0; i < PacketsPerTick && _outgoing.Count != 0; i++)
             {
-                var queued = _outgoing.Dequeue();
-                _queuedBytes -= queued.Bytes.Length;
+                var queued = _outgoing.Peek();
                 if (!_members.Contains(queued.Peer))
+                {
+                    _outgoing.Dequeue();
+                    _queuedBytes -= queued.Bytes.Length;
                     continue;
-                var buffer = new Il2CppStructArray<byte>(queued.Bytes);
-                if (!SteamMatchmaking.SendLobbyChatMsg(_lobbyId, buffer, queued.Bytes.Length))
+                }
+                bool sent;
+                try
+                {
+                    if (_useNative && !CanSendNative(queued))
+                        break;
+                    _outgoing.Dequeue();
+                    _queuedBytes -= queued.Bytes.Length;
+                    sent = _useNative ? SendNative(queued) :
+                        SteamMatchmaking.SendLobbyChatMsg(_lobbyId, new Il2CppStructArray<byte>(queued.Bytes), queued.Bytes.Length);
+                }
+                catch (Exception exception)
+                {
+                    MelonLogger.Error($"Steam packet send failed: {exception}");
+                    Leave();
+                    return;
+                }
+                if (!sent)
                 {
                     MelonLogger.Error($"Steam rejected lobby packet to {queued.Peer}; message {queued.Sequence} cannot be delivered.");
                     Leave();
                     return;
                 }
             }
+            if (_useNative)
+                ReceiveNative();
         }
         foreach (var (sender, payload) in _reassembly.Expire(DateTime.UtcNow))
             MessageReceived?.Invoke(sender, payload);
@@ -114,6 +156,8 @@ internal sealed class SteamLobby : IDisposable
     {
         if (!_ready || _creating || IsInLobby)
             return;
+        _useNative = _nativeAvailable;
+        _reassembly = new LobbyReassembly(_useNative ? LobbyPackets.NativeChunkPayload : LobbyPackets.ChunkPayload);
         _creating = true;
         _createResult!.Set(SteamMatchmaking.CreateLobby(ELobbyType.k_ELobbyTypeFriendsOnly, 4), (Action<LobbyCreated_t, bool>)OnLobbyCreated);
         MelonLogger.Msg("Creating friends-only Steam lobby.");
@@ -134,6 +178,14 @@ internal sealed class SteamLobby : IDisposable
         if (!IsInLobby)
             return;
         var previousMembers = _members;
+        if (_useNative)
+            foreach (var peer in previousMembers)
+                if (peer != LocalSteamId)
+                {
+                    var identity = new SteamNetworkingIdentity();
+                    identity.SetSteamID64(peer);
+                    SteamNetworkingMessages.CloseSessionWithUser(ref identity);
+                }
         SteamMatchmaking.LeaveLobby(_lobbyId);
         MelonLogger.Msg($"Left lobby {_lobbyId.m_SteamID}.");
         _lobbyId = default;
@@ -156,7 +208,8 @@ internal sealed class SteamLobby : IDisposable
             return false;
         if (payload.Length > LobbyPackets.MaxPayload)
             throw new ArgumentOutOfRangeException(nameof(payload), "Application messages are limited to 4 MiB.");
-        var count = Math.Max(1, (payload.Length + LobbyPackets.ChunkPayload - 1) / LobbyPackets.ChunkPayload);
+        var chunkSize = _useNative ? LobbyPackets.NativeChunkPayload : LobbyPackets.ChunkPayload;
+        var count = Math.Max(1, (payload.Length + chunkSize - 1) / chunkSize);
         var bytes = payload.Length + count * LobbyPackets.HeaderSize;
         if (bytes > MaxQueuedBytes - _queuedBytes)
         {
@@ -167,16 +220,16 @@ internal sealed class SteamLobby : IDisposable
         if (sequence == 0)
             sequence = 1;
         _nextSequence[peer] = sequence;
-        for (var offset = 0; offset < payload.Length || offset == 0; offset += LobbyPackets.ChunkPayload)
+        for (var offset = 0; offset < payload.Length || offset == 0; offset += chunkSize)
         {
-            var length = Math.Min(LobbyPackets.ChunkPayload, payload.Length - offset);
-            var packet = LobbyPackets.Encode(sequence, peer, payload.Length, offset, payload.AsSpan(offset, length));
+            var length = Math.Min(chunkSize, payload.Length - offset);
+            var packet = LobbyPackets.Encode(sequence, peer, payload.Length, offset, payload.AsSpan(offset, length), chunkSize);
             _outgoing.Enqueue(new QueuedPacket(peer, sequence, packet));
             _queuedBytes += packet.Length;
             if (payload.Length == 0)
                 break;
         }
-        // Lobby chat is reliable. This flag preserves the session API for a later data transport.
+        // Chunk reassembly and ordered delivery currently require reliable sends.
         _ = reliable;
         return true;
     }
@@ -202,6 +255,7 @@ internal sealed class SteamLobby : IDisposable
         SteamMatchmaking.SetLobbyData(id, ProtocolKey, ProtocolVersion);
         SteamMatchmaking.SetLobbyData(id, BuildKey, ModBuild);
         SteamMatchmaking.SetLobbyData(id, GameKey, _gameFingerprint!);
+        SteamMatchmaking.SetLobbyData(id, TransportKey, _useNative ? "native" : "chat");
         MelonLogger.Msg($"Created lobby {id.m_SteamID}.");
     }
 
@@ -214,10 +268,13 @@ internal sealed class SteamLobby : IDisposable
         }
         var lobby = new CSteamID(result.m_ulSteamIDLobby);
         var owner = SteamMatchmaking.GetLobbyOwner(lobby).m_SteamID;
+        var transport = SteamMatchmaking.GetLobbyData(lobby, TransportKey);
         if (owner == 0 ||
             SteamMatchmaking.GetLobbyData(lobby, ProtocolKey) != ProtocolVersion ||
             SteamMatchmaking.GetLobbyData(lobby, BuildKey) != ModBuild ||
-            SteamMatchmaking.GetLobbyData(lobby, GameKey) != _gameFingerprint)
+            SteamMatchmaking.GetLobbyData(lobby, GameKey) != _gameFingerprint ||
+            (transport != "native" && transport != "chat") ||
+            (transport == "native" && !_nativeAvailable))
         {
             MelonLogger.Error("Lobby protocol, mod build, or game build mismatch; leaving.");
             SteamMatchmaking.LeaveLobby(lobby);
@@ -225,6 +282,8 @@ internal sealed class SteamLobby : IDisposable
         }
         if (IsInLobby)
             Leave();
+        _useNative = transport == "native";
+        _reassembly = new LobbyReassembly(_useNative ? LobbyPackets.NativeChunkPayload : LobbyPackets.ChunkPayload);
         _lobbyId = lobby;
         _hostSteamId = owner;
         RefreshMembers(notify: false);
@@ -265,6 +324,12 @@ internal sealed class SteamLobby : IDisposable
                 continue;
             _nextSequence.Remove(peer);
             _reassembly.RemovePeer(peer);
+            if (_useNative)
+            {
+                var identity = new SteamNetworkingIdentity();
+                identity.SetSteamID64(peer);
+                SteamNetworkingMessages.CloseSessionWithUser(ref identity);
+            }
             if (notify)
                 PeerLeft?.Invoke(peer);
         }
@@ -275,7 +340,7 @@ internal sealed class SteamLobby : IDisposable
 
     private void OnChatMessage(LobbyChatMsg_t message)
     {
-        if (!IsInLobby || message.m_ulSteamIDLobby != LobbyId)
+        if (!IsInLobby || _useNative || message.m_ulSteamIDLobby != LobbyId)
             return;
         var buffer = new Il2CppStructArray<byte>(LobbyPackets.MaxPacket);
         var sender = default(CSteamID);
@@ -292,6 +357,103 @@ internal sealed class SteamLobby : IDisposable
             return;
         foreach (var (peer, payload) in _reassembly.Accept(sender.m_SteamID, packet, DateTime.UtcNow))
             MessageReceived?.Invoke(peer, payload);
+    }
+
+    private bool SendNative(QueuedPacket queued)
+    {
+        var identity = new SteamNetworkingIdentity();
+        identity.SetSteamID64(queued.Peer);
+        var pointer = Marshal.AllocHGlobal(queued.Bytes.Length);
+        try
+        {
+            Marshal.Copy(queued.Bytes, 0, pointer, queued.Bytes.Length);
+            return SteamNetworkingMessages.SendMessageToUser(ref identity, pointer, (uint)queued.Bytes.Length,
+                Constants.k_nSteamNetworkingSend_Reliable, NativeChannel) == EResult.k_EResultOK;
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(pointer);
+        }
+    }
+
+    private static bool CanSendNative(QueuedPacket queued)
+    {
+        var identity = new SteamNetworkingIdentity();
+        identity.SetSteamID64(queued.Peer);
+        SteamNetworkingMessages.GetSessionConnectionInfo(ref identity, out _, out var status);
+        if (status is null)
+            return true;
+        const int maxSteamPendingBytes = 2 * 1024 * 1024;
+        return (long)status.m_cbPendingReliable + status.m_cbSentUnackedReliable + queued.Bytes.Length <= maxSteamPendingBytes;
+    }
+
+    private void ReceiveNative()
+    {
+        try
+        {
+            var pointers = new Il2CppStructArray<IntPtr>(16);
+            for (var batch = 0; batch < 4; batch++)
+            {
+                var count = SteamNetworkingMessages.ReceiveMessagesOnChannel(NativeChannel, pointers, pointers.Length);
+                if (count < 0 || count > pointers.Length)
+                    throw new InvalidOperationException($"Invalid native receive count {count}.");
+                for (var i = 0; i < count; i++)
+                {
+                    var pointer = pointers[i];
+                    if (pointer == IntPtr.Zero)
+                        continue;
+                    try
+                    {
+                        var message = SteamNetworkingMessage_t.FromIntPtr(pointer);
+                        var sender = message.m_identityPeer.GetSteamID64();
+                        if (message.m_cbSize < LobbyPackets.HeaderSize ||
+                            message.m_cbSize > LobbyPackets.HeaderSize + LobbyPackets.NativeChunkPayload ||
+                            !_members.Contains(sender))
+                            continue;
+                        var bytes = new byte[message.m_cbSize];
+                        Marshal.Copy(message.m_pData, bytes, 0, bytes.Length);
+                        if (!LobbyPackets.TryDecode(bytes, out var packet, LobbyPackets.NativeChunkPayload) ||
+                            packet.Recipient != LocalSteamId)
+                            continue;
+                        foreach (var (peer, payload) in _reassembly.Accept(sender, packet, DateTime.UtcNow))
+                            MessageReceived?.Invoke(peer, payload);
+                    }
+                    finally
+                    {
+                        SteamNetworkingMessage_t.Release(pointer);
+                        pointers[i] = IntPtr.Zero;
+                    }
+                }
+                if (count < pointers.Length)
+                    break;
+            }
+        }
+        catch (Exception exception)
+        {
+            MelonLogger.Error($"SteamNetworkingMessages receive failed: {exception}");
+            Leave();
+        }
+    }
+
+    private void OnSessionRequested(SteamNetworkingMessagesSessionRequest_t request)
+    {
+        var peer = request.m_identityRemote.GetSteamID64();
+        var identity = request.m_identityRemote;
+        if (_useNative && IsInLobby && _members.Contains(peer))
+            SteamNetworkingMessages.AcceptSessionWithUser(ref identity);
+        else
+            SteamNetworkingMessages.CloseSessionWithUser(ref identity);
+    }
+
+    private void OnSessionFailed(SteamNetworkingMessagesSessionFailed_t failure)
+    {
+        if (!_useNative || !IsInLobby)
+            return;
+        var peer = failure.m_info.m_identityRemote.GetSteamID64();
+        if (!_members.Contains(peer))
+            return;
+        MelonLogger.Error($"Steam message session with {peer} failed; ending lobby session.");
+        Leave();
     }
 
     private bool TryJoinLaunchLobby()
@@ -315,6 +477,8 @@ internal sealed class SteamLobby : IDisposable
         Leave();
         _disposed = true;
         _createResult?.Dispose();
+        _sessionFailed?.Dispose();
+        _sessionRequested?.Dispose();
         _chatMessage?.Dispose();
         _memberChanged?.Dispose();
         _lobbyEntered?.Dispose();

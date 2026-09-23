@@ -6,13 +6,13 @@ static void Check(bool condition, string message)
         throw new Exception(message);
 }
 
-static IEnumerable<LobbyPacket> Packets(uint sequence, byte[] payload)
+static IEnumerable<LobbyPacket> Packets(uint sequence, byte[] payload, int chunkSize = LobbyPackets.ChunkPayload)
 {
-    for (var offset = 0; offset < payload.Length || offset == 0; offset += LobbyPackets.ChunkPayload)
+    for (var offset = 0; offset < payload.Length || offset == 0; offset += chunkSize)
     {
-        var length = Math.Min(LobbyPackets.ChunkPayload, payload.Length - offset);
-        var bytes = LobbyPackets.Encode(sequence, 22, payload.Length, offset, payload.AsSpan(offset, length));
-        Check(LobbyPackets.TryDecode(bytes, out var packet), "Encoded packet did not decode.");
+        var length = Math.Min(chunkSize, payload.Length - offset);
+        var bytes = LobbyPackets.Encode(sequence, 22, payload.Length, offset, payload.AsSpan(offset, length), chunkSize);
+        Check(LobbyPackets.TryDecode(bytes, out var packet, chunkSize), "Encoded packet did not decode.");
         yield return packet;
         if (payload.Length == 0)
             yield break;
@@ -29,6 +29,13 @@ Check(!reassembly.Accept(11, chunks[0], now).Any(), "Delivered incomplete messag
 var delivered = reassembly.Accept(11, chunks[1], now).ToArray();
 Check(delivered.Length == 1 && delivered[0].Payload.SequenceEqual(payload), "Out of order chunk reassembly failed.");
 Check(!reassembly.Accept(11, chunks[0], now).Any(), "Duplicate message delivered.");
+var nativePayload = Enumerable.Range(0, LobbyPackets.NativeChunkPayload + 17).Select(i => (byte)i).ToArray();
+var nativeChunks = Packets(1, nativePayload, LobbyPackets.NativeChunkPayload).ToArray();
+var nativeReassembly = new LobbyReassembly(LobbyPackets.NativeChunkPayload);
+Check(!nativeReassembly.Accept(99, nativeChunks[1], now).Any(), "Native message delivered incomplete.");
+Check(nativeReassembly.Accept(99, nativeChunks[0], now).Single().Payload.SequenceEqual(nativePayload), "Native chunk reassembly failed.");
+var nativeWire = LobbyPackets.Encode(1, 22, nativePayload.Length, 0, nativePayload.AsSpan(0, LobbyPackets.NativeChunkPayload), LobbyPackets.NativeChunkPayload);
+Check(!LobbyPackets.TryDecode(nativeWire, out _), "Native chunk accepted as lobby chat.");
 
 var second = Packets(2, new byte[] { 7 }).Single();
 var third = Packets(3, new byte[] { 8 }).Single();
