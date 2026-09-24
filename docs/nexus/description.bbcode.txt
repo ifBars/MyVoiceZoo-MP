@@ -11,7 +11,7 @@ Co-op uses the game's familiar menus. Open Settings, host your zoo and invite a 
 [*]Shared animals, names, voice recordings and animal placement.
 [*]Shared gold, area unlocks, camps and purchased costumes.
 [*]Independent player movement and equipped costumes, with nameplates above other players.
-[*]Choose Lucy or a blond male character in the closet. All five outfits have male variants, with matching portraits and previews. Your character choice is saved locally.
+[*]Choose Lucy or Luke, a blond male character in the closet. All five outfits have male variants, with matching portraits and previews. Your character choice is saved locally.
 [*]Host, Invite friends and Leave co-op controls inside the native Settings menu.
 [*]A brief startup hint to help players find the co-op controls.
 [*]Guest solo progress is kept separate from the host's shared zoo.
@@ -59,8 +59,8 @@ If the host leaves, the session ends and guests return to their own zoos. Host m
 
 [b]Reporting a problem:[/b] Describe what happened and whether you were hosting or visiting. Include the mod version and both players' [b]MelonLoader/Latest.log[/b] files where possible. Preserve those logs before restarting.
 
-[size=4][b]Version 1.0.0[/b][/size]
-Initial public release. Tested through local co-op checks and two-player Steam playtesting. Lobbies allow four players; four-player sessions and extended stress testing have not been independently verified.
+[size=4][b]Version 1.1.0[/b][/size]
+Adds Luke as a playable character with all five outfits, a native closet selector, matching previews, and cleaned sprite edges. Character selection was validated in local two-player GSE tests; the earlier co-op release also received two-player Steam playtesting. Lobbies allow four players; four-player sessions and extended stress testing have not been independently verified.
 
 To uninstall, close the game and remove [b]Mods/MVZ.MP.dll[/b].
 

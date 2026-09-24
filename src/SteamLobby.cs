@@ -13,7 +13,7 @@ namespace MvzMp;
 internal sealed class SteamLobby : IDisposable
 {
     private const string ProtocolVersion = "5";
-    private const string ModBuild = "1.0.0";
+    private const string ModBuild = "1.1.0";
     private const string ProtocolKey = "mvzmp_version";
     private const string BuildKey = "mvzmp_build";
     private const string GameKey = "mvzmp_game";

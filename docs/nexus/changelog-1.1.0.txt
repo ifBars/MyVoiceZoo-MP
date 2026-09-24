@@ -1,0 +1,8 @@
+Version 1.1.0
+- Added Luke, a blond male character, with all five existing costumes and idle/running animations.
+- Choose Lucy or Luke in the native closet; each player keeps an independent character choice.
+- Added matching outfit portraits, full previews and purchase confirmation artwork.
+- Character choice is saved locally and works in solo play and co-op.
+- Removed the white fringe around the new character sprites.
+
+Both players must update to this version. Uses co-op protocol 5.
