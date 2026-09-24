@@ -22,6 +22,7 @@ internal sealed class RemotePlayers : IDisposable
         public string DisplayName = string.Empty;
         public readonly PoseBuffer Poses = new();
         public int CostumeId = -1;
+        public int CharacterId = -1;
         public bool NameReported;
     }
 
@@ -43,7 +44,7 @@ internal sealed class RemotePlayers : IDisposable
         var costume = CostumeManager.Instance;
         return new PlayerPose(position.x, position.y, position.z, player.isFacingRight, moving,
             costume == null ? 0 : (int)costume.EquippedCostumeID, Clock,
-            player.spriteRenderer.sortingLayerID, player.spriteRenderer.sortingOrder);
+            player.spriteRenderer.sortingLayerID, player.spriteRenderer.sortingOrder, CharacterAppearance.Ready ? CharacterAppearance.Selected : 0);
     }
 
     private static double Clock => (double)Stopwatch.GetTimestamp() / Stopwatch.Frequency;
@@ -87,14 +88,16 @@ internal sealed class RemotePlayers : IDisposable
             replica.Root.transform.localScale = scale;
         }
         replica.Animator.SetBool("isRun", pose.Moving);
-        if (replica.CostumeId != pose.CostumeId)
+        var asset = CharacterAppearance.GetLibrary(pose.CharacterId, pose.CostumeId);
+        if (replica.CostumeId != pose.CostumeId || replica.CharacterId != pose.CharacterId || replica.Library.spriteLibraryAsset != asset)
         {
-            var asset = GetCostumeAsset(pose.CostumeId);
             if (asset != null)
             {
                 replica.Library.spriteLibraryAsset = asset;
                 replica.Library.RefreshSpriteResolvers();
                 replica.CostumeId = pose.CostumeId;
+                replica.CharacterId = pose.CharacterId;
+                MelonLogger.Msg($"CHARACTER REMOTE character={pose.CharacterId} costume={pose.CostumeId} library={asset.name}");
             }
         }
     }

@@ -17,6 +17,7 @@ Keyboard shortcuts: **F6** host, **F7** invite, **F8** leave. Steam must be runn
 - Shared animals, names, recordings, placement, gold, areas, camps, and purchased costumes.
 - Native adoption and edit screens. The host validates costs and reserves an animal while a player edits it.
 - Each player keeps independent movement and equipped appearance; remote players have nameplates.
+- Choose Lucy or a blond male character in the native closet, with all five costumes, matching previews, and a saved local preference.
 - Recordings transfer when shared animal state requires them. There is no live microphone chat.
 - Guests do not save the shared zoo into their solo save. Leaving restores their pre-join zoo in memory.
 - If the host leaves, the session ends. Host migration is not supported.

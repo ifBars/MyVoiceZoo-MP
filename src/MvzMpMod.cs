@@ -37,10 +37,14 @@ public sealed class MvzMpMod : MelonMod
         if (_lobby is null) return;
         try
         {
+            CharacterAppearance.Tick();
+            CharacterCloset.Tick();
             _lobby.TryInitialize();
             _lobby.Tick();
             _runtime!.Tick();
             _smoke!.Tick();
+            MvzMp.Diagnostics.CharacterSmoke.Tick(_lobby);
+            MvzMp.Diagnostics.CharacterProbe.Tick();
             MvzMp.Diagnostics.MovementProbe.Tick(_lobby);
             _startupHint.Tick();
             _panel!.Tick();
@@ -57,7 +61,7 @@ public sealed class MvzMpMod : MelonMod
 
     public override void OnDeinitializeMelon()
     {
-        _runtime?.Dispose(); _startupHint.Dispose(); _panel?.Dispose(); _lobby?.Dispose(); NativeHooks.Runtime = null;
+        _runtime?.Dispose(); CharacterCloset.Dispose(); CharacterAppearance.Dispose(); _startupHint.Dispose(); _panel?.Dispose(); _lobby?.Dispose(); NativeHooks.Runtime = null;
     }
 }
 

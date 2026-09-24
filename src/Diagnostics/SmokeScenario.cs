@@ -102,6 +102,7 @@ internal sealed class SmokeScenario
                     VerifyRecording(adopted.Voice, "host-received-guest");
                     CaptureScreenshot();
                     MelonLogger.Msg($"PASS|shared-zoo|host animal={adopted.Id} voice={adopted.Voice} position={adopted.X} camp={string.Join(',', state.Camps)} save={SaveLoadSystem._path}");
+                    CharacterSmoke.Prepare();
                     _step = 99;
                 }
                 return;
@@ -207,7 +208,8 @@ internal sealed class SmokeScenario
             }
             else if (_step == 51)
             {
-                if (!MovementProbe.Completed) return;
+                CharacterSmoke.Prepare();
+                if (!MovementProbe.Completed || !CharacterSmoke.Completed) return;
                 _step = 54;
             }
             else if (_step == 54)

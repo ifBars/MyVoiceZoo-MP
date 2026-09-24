@@ -1,7 +1,7 @@
 namespace MvzMp.Presentation;
 
 public readonly record struct PlayerPose(float X, float Y, float Z, bool FacingRight, bool Moving,
-    int CostumeId, double Time = 0, int SortingLayer = 0, int SortingOrder = 0);
+    int CostumeId, double Time = 0, int SortingLayer = 0, int SortingOrder = 0, int CharacterId = 0);
 
 /// <summary>Plays a short history of authoritative positions; never predicts through obstacles.</summary>
 internal sealed class PoseBuffer

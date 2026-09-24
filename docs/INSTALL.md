@@ -12,6 +12,8 @@ Open the game's settings menu and choose Host in its co-op section, then Invite 
 
 Use the normal game interfaces to adopt or edit animals, record their voices, buy upgrades, and move them. The host approves shared purchases. An animal is reserved while another player edits it. Each player moves independently and can equip a different costume.
 
+Open the closet to choose Lucy or the blond male character. Every existing outfit has a male variant, and the outfit portraits and preview follow your choice. Character selection is saved locally and works in solo play as well as co-op; it does not change your friend's character.
+
 Shared progress belongs to the host. Leaving restores the guest's own zoo; guests do not write shared progress into their solo save. If the host leaves, the session ends. There is no host migration or live microphone chat.
 
 ## Compatibility
@@ -22,6 +24,6 @@ This package contains no game assemblies, generated wrappers, saves, recordings,
 
 Validated through local two-process gameplay, recording, reconnect, save-preservation and visual checks, plus author-reported two-player Steam playtesting. Four-player and long-duration stress testing have not been independently verified.
 
-Version 1.0.0 uses protocol 4. Both players must update together. Movement uses a separate latest-pose channel and buffered playback; native sprite pivot sorting is preserved. Microphone diagnostics distinguish capture silence from transfer failure.
+Version 1.0.0 uses protocol 5. Both players must update together. Movement uses a separate latest-pose channel and buffered playback; native sprite pivot sorting is preserved. Microphone diagnostics distinguish capture silence from transfer failure.
 
 On startup, a four-second fading hint points you to Settings once the splash, loading screen, and microphone guide have closed. The settings frame is wider, and Quit Game is centered below both columns.

@@ -68,5 +68,6 @@ internal sealed class WireMessage
     public bool FacingRight { get; set; }
     public bool Moving { get; set; }
     public int CostumeId { get; set; }
+    public int CharacterId { get; set; }
 }
 

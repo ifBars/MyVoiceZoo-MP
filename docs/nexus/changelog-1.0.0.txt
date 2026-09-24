@@ -5,3 +5,4 @@ Initial public release.
 - Co-op controls in native Settings, startup hint and offline-friend invitation guidance.
 - Buffered remote movement and native sprite sorting.
 - Guest solo-save protection and restoration on leaving.
+- Native closet character selector: Lucy or a blond male character, with all five outfits, idle/run frames and matching previews.

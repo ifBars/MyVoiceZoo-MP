@@ -66,3 +66,14 @@ Added settings help explaining the user's Shift+Tab / friend menu / Invite to Ga
 The author reports that the latest two-player Steam playtest is working. This is user-reported gameplay evidence, separate from automated local testing. Four-player sessions and extended stress testing remain unverified.
 
 The Release build passed with zero warnings/errors. Managed transport and presentation tests passed during release preparation. The rendered GSE shared-zoo scenario passed on the final 1.0.0 candidate in `run-20260923-071245-7b51eca7`, including recording transfer, guest reconnect, host departure, and solo-zoo restoration. The opt-in preview fixture used players Bars and Juniper and animal Bean. Its actual gameplay capture supplies the Nexus artwork, with cropping and title text added using ImageMagick; screenshots remain outside Git and the player download.
+
+## Character selection and blond male artwork
+
+Added independent character choice (Lucy or male) in the native closet, including costume portraits, full preview, purchase notice preview, and a local preference. All five native outfits have custom male artwork with three idle and six running frames each. The character retains the cheek bandage and uses blond curls. Native Lucy libraries are preserved; the mod embeds only the custom artwork. Protocol 5 carries character identity separately from costume.
+
+`run-20260923-191844-f3500c58` passed rendered two-process GSE checks for all five male outfits, native running animation on both peers, independent Lucy guest appearance, switching the host back to Lucy and then male, recording transfer, reconnect, host departure, and solo restoration. Both peer logs report `PASS|character-smoke|`. Managed appearance-buffer tests also passed. This character addition has not yet been playtested with two real Steam accounts.
+
+Two preceding diagnostic runs were rejected: the first injected movement before native Update reset input; the second attempted a costume without its required animal/recording in the disposable fixture. The corrected fixture exercises normal native equip logic with those prerequisites. No production costume logic was bypassed.
+
+All 45 frames received a transparency-edge correction after a visible white fringe was reported. The correction preserves alpha coverage/interior artwork and replaces contaminated edge color with dark outline color. Fresh in-game captures from the passing run were inspected for the five outfits. Native closet callback and persistence were checked in the retained isolated settings clone; full preview and cropped portrait masks were visually inspected.
+The final isolated closet run also passed the purchase-notice sprite assertion after adding the native Show hook; its confirmation auto-dismissed before the retained screenshot, so that screenshot documents the closet rather than the transient purchase popup.

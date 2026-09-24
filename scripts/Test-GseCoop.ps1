@@ -16,6 +16,7 @@ param(
     [switch]$Microphone,
     [switch]$Motion,
     [switch]$Settings,
+    [switch]$CharacterSmoke,
     [switch]$PlanOnly
 )
 
@@ -23,6 +24,7 @@ $ErrorActionPreference = 'Stop'
 if ($HostName -match '[\r\n]' -or $ClientName -match '[\r\n]') { throw 'Player names must be single-line.' }
 if (($Microphone -or $Motion) -and $Scenario -ne 'shared-zoo') { throw '-Microphone and -Motion require -Scenario shared-zoo.' }
 if ($Settings -and -not $Rendered) { throw '-Settings requires -Rendered for visual inspection.' }
+if ($CharacterSmoke -and ($Scenario -ne 'shared-zoo' -or -not $Rendered)) { throw '-CharacterSmoke requires -Scenario shared-zoo -Rendered.' }
 $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $game = [IO.Path]::GetFullPath($GameDirectory)
 $gse = [IO.Path]::GetFullPath($GseDll)
@@ -140,6 +142,7 @@ try {
     if ($Microphone) { $hostArgs += '--mvzmp-smoke-microphone'; $clientArgs += '--mvzmp-smoke-microphone' }
     if ($Motion) { $hostArgs += '--mvzmp-smoke-motion'; $clientArgs += '--mvzmp-smoke-motion' }
     if ($Settings) { $hostArgs += '--mvzmp-smoke-settings'; $clientArgs += '--mvzmp-smoke-settings' }
+    if ($CharacterSmoke) { $hostArgs += '--mvzmp-smoke-characters'; $clientArgs += '--mvzmp-smoke-characters' }
     if ($Scenario) {
         $hostArgs += "--mvzmp-smoke=$Scenario"
         $clientArgs += "--mvzmp-smoke=$Scenario"
@@ -175,6 +178,10 @@ try {
         Wait-Log $clientLog "PASS\|$([regex]::Escape($Scenario))\|" 'client-scenario' @($hostProcess, $clientProcess) | Out-Null
     }
     if ($Motion) { Wait-Log $hostLog 'PASS\|native-motion\|' 'native-motion' @($hostProcess, $clientProcess) | Out-Null }
+    if ($CharacterSmoke) {
+        Wait-Log $hostLog 'PASS\|character-smoke\|' 'host-characters' @($hostProcess, $clientProcess) | Out-Null
+        Wait-Log $clientLog 'PASS\|character-smoke\|' 'client-characters' @($hostProcess, $clientProcess) | Out-Null
+    }
     if ($Microphone) { Wait-Log $clientLog 'PASS\|guest-microphone-capture\|' 'guest-microphone' @($hostProcess, $clientProcess) | Out-Null }
     if ($Settings) {
         Wait-Log $hostLog 'PASS\|settings-hidden\|' 'host-settings' @($hostProcess, $clientProcess) | Out-Null
@@ -205,7 +212,7 @@ try {
     [pscustomobject]@{
         Result = $result; Run = $run; HostSteamId = $HostSteamId; ClientSteamId = $ClientSteamId
         GseSha256 = $actualHash; Scenario = $Scenario; SaveRestored = $saveIsGuarded
-        Microphone = [bool]$Microphone; Motion = [bool]$Motion; Settings = [bool]$Settings
+        Microphone = [bool]$Microphone; Motion = [bool]$Motion; Settings = [bool]$Settings; CharacterSmoke = [bool]$CharacterSmoke
         Evidence = $evidence; TimeUtc = [DateTime]::UtcNow.ToString('o')
     } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $evidence 'result.json')
     Write-Output "Evidence retained: $evidence"

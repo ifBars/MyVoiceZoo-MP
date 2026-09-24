@@ -11,6 +11,7 @@ Co-op uses the game's familiar menus. Open Settings, host your zoo and invite a 
 [*]Shared animals, names, voice recordings and animal placement.
 [*]Shared gold, area unlocks, camps and purchased costumes.
 [*]Independent player movement and equipped costumes, with nameplates above other players.
+[*]Choose Lucy or a blond male character in the closet. All five outfits have male variants, with matching portraits and previews. Your character choice is saved locally.
 [*]Host, Invite friends and Leave co-op controls inside the native Settings menu.
 [*]A brief startup hint to help players find the co-op controls.
 [*]Guest solo progress is kept separate from the host's shared zoo.
