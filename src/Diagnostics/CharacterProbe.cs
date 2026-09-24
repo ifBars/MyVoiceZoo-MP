@@ -58,7 +58,7 @@ internal static class CharacterProbe
             }
             if (Environment.GetCommandLineArgs().Contains("--mvzmp-character-male") && !_selectedMale)
             {
-                var button = _closet?.transform.Find("Contents/Frame/MVZ-MP Character/Male character")?.GetComponent<UnityEngine.UI.Button>();
+                var button = _closet?.transform.Find("Contents/Frame/MVZ-MP Character/Luke")?.GetComponent<UnityEngine.UI.Button>();
                 if (button == null) return;
                 if (Presentation.CharacterAppearance.Selected != 1) button.onClick.Invoke();
                 if (Presentation.CharacterAppearance.Selected != 1) throw new InvalidOperationException("Closet character button did not switch character.");

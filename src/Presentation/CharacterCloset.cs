@@ -46,7 +46,7 @@ internal static class CharacterCloset
             CreatePanel(closet);
         }
         UpdateButton(_lucy, "Lucy", CharacterAppearance.Selected == 0, true);
-        UpdateButton(_male, "Male character", CharacterAppearance.Selected == 1, CharacterAppearance.Ready);
+        UpdateButton(_male, "Luke", CharacterAppearance.Selected == 1, CharacterAppearance.Ready);
         if (_title != null) _title.text = "Closet";
         var detail = closet._costumeDetailPanel;
         if (detail != null) UpdatePreview(detail._costumeIcon, (int)detail._costumeID);
@@ -121,7 +121,7 @@ internal static class CharacterCloset
         heading.raycastTarget = false;
         Position(heading.rectTransform, new Vector2(-355f, 0f), new Vector2(210f, 60f));
         _lucy = MakeButton("Lucy", 0, new Vector2(-80f, 0f), template);
-        _male = MakeButton("Male character", 1, new Vector2(205f, 0f), template);
+        _male = MakeButton("Luke", 1, new Vector2(205f, 0f), template);
         MelonLoader.MelonLogger.Msg("CHARACTER CLOSET Native character controls installed");
     }
 
